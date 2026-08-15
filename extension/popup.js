@@ -265,7 +265,7 @@ async function captureCurrentPage() {
     currentPage.title = localCapture.title || currentPage.title;
     titleElement.textContent = currentPage.title;
     if (localCapture.readability) {
-      displayChosenContent("✓ 已从浏览器读取正文", localCapture.readability);
+      displayChosenContent(localCapture.readability.label || "✓ 已从浏览器读取正文", localCapture.readability);
       showStatus("正文已读取，推荐标签会自动显示在标签菜单中。", "success");
     } else {
       chosenContent = null;

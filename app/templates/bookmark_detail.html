@@ -18,6 +18,7 @@
     </div>
   </header>
   <div class="metadata">
+    <span class="platform-badge">{{ bookmark.platform }}</span>
     <span>收藏于 {{ bookmark.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
     <span>更新于 {{ bookmark.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
     <div class="tag-list">{% for item in bookmark.tags %}<span class="tag">{{ item.name }}</span>{% endfor %}</div>

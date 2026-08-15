@@ -45,6 +45,45 @@ ARTICLE_HTML = """<!doctype html>
 </body>
 </html>"""
 
+PLATFORM_PAGES = {
+    "https://www.xiaohongshu.com/explore/test-note": """<!doctype html><html><head>
+      <title>小红书测试笔记</title>
+      <meta property="og:title" content="小红书测试笔记">
+      <meta property="og:image" content="https://www.xiaohongshu.com/note-cover.jpg">
+    </head><body><main id="noteContainer"><section class="note-content">
+      <h1 class="title">小红书测试笔记</h1><p class="desc">这是应当被保存的小红书笔记正文，而不是网站页脚。</p>
+      <div class="author-wrapper"><span class="username">测试作者</span></div>
+      <div class="swiper-slide"><img src="/note-image.jpg"></div>
+    </section></main><footer>不应成为正文的网站页脚</footer></body></html>""",
+    "https://www.youtube.com/watch?v=test-video": """<!doctype html><html><head>
+      <title>YouTube 测试视频</title>
+      <meta property="og:title" content="YouTube 测试视频">
+      <meta property="og:description" content="这是视频简介，包含创作者希望保存的文字信息。">
+      <meta property="og:image" content="https://www.youtube.com/video-cover.jpg">
+    </head><body><main><div id="owner"><span id="channel-name">测试频道</span></div>
+      <div id="description-inline-expander"><div id="description">这是视频简介，包含创作者希望保存的文字信息。</div></div>
+    </main></body></html>""",
+    "https://www.reddit.com/r/python/comments/test/post": """<!doctype html><html><head>
+      <title>Reddit test post</title><meta property="og:image" content="https://www.reddit.com/post-image.jpg">
+    </head><body><shreddit-post post-title="Reddit test post" author="example_user" subreddit-name="python">
+      <div slot="text-body"><p>This is the Reddit post body that should be preserved with its useful content.</p></div>
+      <div slot="post-media-container"><img src="/post-image.jpg"></div>
+    </shreddit-post></body></html>""",
+}
+
+
+def route_platform_pages(route: Route) -> None:
+    if route.request.url in PLATFORM_PAGES:
+        route.fulfill(
+            status=200,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+            body=PLATFORM_PAGES[route.request.url],
+        )
+    elif route.request.url.endswith(".jpg"):
+        route.fulfill(status=200, content_type="image/jpeg", body=b"")
+    else:
+        route.abort()
+
 
 def route_requests(route: Route) -> None:
     global recent, created_payload, suggestion_requests, ai_should_fail
@@ -134,6 +173,9 @@ with TemporaryDirectory(prefix="url-bookmark-extension-") as profile_dir:
             ],
         )
         context.route("https://url-bookmark.onrender.com/**", route_requests)
+        context.route("https://www.xiaohongshu.com/**", route_platform_pages)
+        context.route("https://www.youtube.com/**", route_platform_pages)
+        context.route("https://www.reddit.com/**", route_platform_pages)
         console_errors: list[str] = []
         context.on(
             "console",
@@ -152,6 +194,31 @@ with TemporaryDirectory(prefix="url-bookmark-extension-") as profile_dir:
         options_page.get_by_role("button", name="保存设置").click()
         options_page.get_by_text("设置已保存。").wait_for()
         options_page.close()
+
+        platform_expectations = {
+            "https://www.xiaohongshu.com/explore/test-note": (
+                "✓ 已读取小红书笔记", "小红书测试笔记", "笔记图片"
+            ),
+            "https://www.youtube.com/watch?v=test-video": (
+                "✓ 已读取 YouTube 视频信息", "测试频道", "视频封面"
+            ),
+            "https://www.reddit.com/r/python/comments/test/post": (
+                "✓ 已读取 Reddit 帖子", "example\\_user", "This is the Reddit post body"
+            ),
+        }
+        for platform_url, expected in platform_expectations.items():
+            platform_page = context.new_page()
+            platform_page.goto(platform_url)
+            platform_page.wait_for_load_state("networkidle")
+            platform_page.add_script_tag(path=EXTENSION_DIR / "vendor" / "Readability.js")
+            platform_page.add_script_tag(path=EXTENSION_DIR / "vendor" / "turndown.js")
+            platform_page.add_script_tag(path=EXTENSION_DIR / "capture.js")
+            captured = platform_page.evaluate("captureBookmarkPage()")
+            assert captured["readability"]["label"] == expected[0]
+            markdown = captured["readability"]["markdownContent"]
+            assert expected[1] in markdown, (platform_url, markdown)
+            assert expected[2] in markdown, (platform_url, markdown)
+            platform_page.close()
 
         article_page = context.new_page()
         article_page.goto("https://url-bookmark.onrender.com/current")

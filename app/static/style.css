@@ -296,6 +296,7 @@ button.danger.solid { background: var(--danger); border-color: var(--danger); }
 .detail-header h1 { margin: 12px 0; font-size: clamp(30px, 4vw, 44px); }
 .detail-actions { grid-template-columns: repeat(3, max-content); }
 .metadata { padding: 14px 0; }
+.platform-badge { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; color: var(--brand); background: var(--surface-subtle); font-weight: 600; }
 .notes-panel, .markdown-panel { margin-top: 20px; border-radius: var(--radius-lg); overflow: hidden; }
 .panel-label { padding: 10px 16px; background: var(--surface-subtle); font-size: 12px; font-weight: 600; letter-spacing: 0; }
 .markdown-body { padding: 24px; color: var(--text-primary); }
