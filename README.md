@@ -24,6 +24,8 @@
 - 使用 SQLite 在本地持久化数据
 - 通过 Chrome/Edge 扩展抓取当前页面、确认推荐标签和备注，并显示最近三条收藏
 - 使用快捷键直接把当前页面保存到 `Inbox`
+- 使用独立的 Extension API Token 连接插件；数据库只保存 Token hash
+- 使用有序、可重复执行的 schema migration 升级 SQLite/PostgreSQL
 
 ## 设计说明
 
@@ -67,7 +69,11 @@ URL 抓取设置了请求超时、最多 5 次重定向和 5 MB 响应限制。�
 
 删除使用软删除：Bookmark 会记录 `deleted_at`，不再出现在“我的收藏”和搜索结果中，但会在回收站保留 30 天。用户可以撤销删除，也可以主动彻底删除；超过 30 天的记录会在下一次访问首页或回收站时自动清理。这样既避免卡片上的误操作直接造成数据丢失，也不需要为这个作业额外维护定时任务。
 
+数据库升级由 `schema_migrations` 记录版本。新数据库会初始化核心表并依次执行全部 migration；旧数据库只执行尚未应用的版本。每个 migration 和对应版本记录位于同一个事务中，失败时不会错误推进版本号。早期通过启动时字段检测补充的 `deleted_at`、`is_draft`、`notes` 和 `platform` 已纳入兼容 migration，已有数据不会被重新创建或删除。
+
 在完成题目要求的 Web 管理端后，我额外实现了一个轻量浏览器扩展作为收藏入口。实际使用时，收藏意图通常发生在用户正在浏览目标网页的时候；“复制网址 → 打开收藏页面 → 粘贴网址”的操作链路偏长。因此扩展只负责采集，搜索、编辑、正文查看和重新抓取仍然留在 Web 端，避免维护两套完整界面。
+
+Web页面继续使用Basic Auth。插件使用独立Bearer Token，只能调用创建收藏、检查重复、读取标签和最近收藏、生成标签建议及把单条收藏移入回收站所需的API。Token原文只在生成或重新生成时显示一次，数据库只保存SHA-256 hash；重新生成后旧Token立即失效。插件不能使用这个Token打开设置、永久删除或执行Web管理操作。
 
 ```text
 插件 = Capture
@@ -97,6 +103,8 @@ app/
 ├── main.py                 # 页面路由与应用规则
 ├── models.py               # Bookmark / Tag 数据模型
 ├── database.py             # SQLite / PostgreSQL 连接与轻量迁移
+├── migrations.py           # 有序 schema migration 与版本记录
+├── auth.py                 # Web Basic Auth 与 Extension Bearer Token
 ├── schemas.py              # 抓取结果类型
 ├── services/extractor.py   # URL 校验、HTTP 获取与正文提取
 ├── services/tag_recommender.py # AI 标签推荐与输出校验
@@ -139,6 +147,16 @@ uvicorn app.main:app --reload
 
 `APP_USERNAME` 默认为 `admin`。部署完成后，浏览器访问 Render 提供的固定 `*.onrender.com` 地址时会显示 HTTP Basic Auth 登录框。
 
+首次部署或这次升级完成后：
+
+1. 使用 Basic Auth 登录网页版。
+2. 打开右上角 **设置**。
+3. 点击 **生成 Token**。
+4. 立即复制一次性显示的完整 Token。
+5. 打开浏览器扩展设置，填写 Server URL 和 API Token。
+
+数据库中不会保存可重新查看的Token明文；如果遗失，请在设置页重新生成，并同步更新扩展。重新生成会立即使旧Token失效。
+
 部署配置会执行：
 
 ```text
@@ -159,6 +177,8 @@ Chrome：
 2. 开启右上角“开发者模式”。
 3. 点击“加载已解压的扩展程序”。
 4. 选择项目中的 `extension` 目录。
+5. 打开扩展的“详细信息 → 扩展程序选项”。
+6. Server URL 默认是 `https://url-bookmark.onrender.com`；粘贴网页版设置中生成的API Token并保存。
 
 Edge 的步骤相同，扩展管理地址为 `edge://extensions`。
 
@@ -169,7 +189,7 @@ Edge 的步骤相同，扩展管理地址为 `edge://extensions`。
 
 弹窗底部显示最近三条收藏。标题可直接打开网页版详情，也可以在弹窗内把收藏移入回收站。
 
-扩展只向后端发送当前页面的 URL、浏览器标题、标签和备注。正文抓取与 AI 标签推荐仍由 FastAPI 完成。对应接口为：
+扩展只向后端发送当前页面的 URL、浏览器标题、标签和备注。正文抓取与 AI 标签推荐仍由 FastAPI 完成。每个插件API请求都必须带有 `Authorization: Bearer <token>`。对应接口为：
 
 ```http
 GET /api/tags
@@ -208,6 +228,9 @@ pytest -q
 - 首页删除确认、回收站、撤销删除、彻底删除和 30 天自动清理
 - 扩展两阶段收藏、AI 推荐、备注、最近三条、删除、JSON API 和扩展来源 CORS
 - AI 推荐输出清洗、已有标签优先、数量限制和失败降级
+- 新/旧SQLite数据库的版本化migration、幂等执行和失败回滚
+- Extension Token生成、hash存储、重新生成失效、API权限边界和Authorization CORS
+- 扩展设置持久化、动态Server URL、Bearer请求及401明确提示
 
 外部网页请求在自动化测试中使用 mock，避免把网络波动误判成代码错误。
 
@@ -260,5 +283,5 @@ AI 协作过程中出现过几个实际问题：
 - 搜索使用 SQLite `LIKE`，没有分词、相关性排序或语义搜索。
 - AI 标签推荐依赖 `DEEPSEEK_API_KEY` 和外部模型服务；请求失败时不会影响收藏数据。
 - 标签名称目前区分大小写。
-- 这是本地单用户作业，没有账号、权限和跨设备同步。
+- 这是单用户应用：Web和插件已有独立认证，但没有多账号、角色或跨用户共享。
 - Render 免费实例休眠后的第一次请求可能需要等待一段时间，扩展抓取也会受到这段冷启动时间影响。

@@ -12,7 +12,7 @@
     <input id="url" name="url" type="url" value="{{ bookmark.url }}" required>
     {% set selector_id = "edit-tags" %}
     {% if bookmark.status == 'success' and bookmark.markdown_content %}
-      {% set tag_recommender_endpoint = "/api/bookmarks/" ~ bookmark.id ~ "/tag-suggestions" %}
+      {% set tag_recommender_endpoint = "/bookmarks/" ~ bookmark.id ~ "/tag-suggestions" %}
       {% set tag_recommender_auto = request.query_params.get('recommend') == '1' %}
     {% else %}
       {% set tag_recommender_endpoint = none %}

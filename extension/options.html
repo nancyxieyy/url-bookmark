@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>URL Bookmark 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">EXTENSION SETTINGS</p>
+    <h1>URL Bookmark 设置</h1>
+    <p class="intro">在网页版“设置”中生成 Extension API Token，然后粘贴到这里。</p>
+    <form id="settings-form">
+      <label for="server-url">Server URL</label>
+      <input id="server-url" name="serverUrl" type="url" required>
+      <small>默认连接当前 Render 部署，也可以改成你的其他 URL Bookmark 服务。</small>
+
+      <label for="api-token">API Token</label>
+      <input id="api-token" name="apiToken" type="password" autocomplete="off" required>
+      <small>Token 仅保存在浏览器扩展自己的本地存储中。</small>
+
+      <button type="submit">保存设置</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+  </main>
+  <script src="settings.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

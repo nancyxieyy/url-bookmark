@@ -14,8 +14,9 @@ a { color: inherit; }
 .topbar { height: 66px; padding: 0 max(24px, calc((100vw - 1180px) / 2)); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 22px; background: rgba(244,240,231,.92); }
 .topbar .brand { font-family: Georgia, serif; font-size: 21px; font-weight: 700; text-decoration: none; }
 .topbar .tagline { color: var(--muted); font-size: 13px; border-left: 1px solid var(--line); padding-left: 22px; }
-.trash-link { margin-left: auto; color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }
-.trash-link:hover { color: var(--accent); }
+.topbar-links { margin-left: auto; display: flex; gap: 18px; }
+.topbar-links a { color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }
+.topbar-links a:hover { color: var(--accent); }
 .container { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .hero { padding: 72px 0 68px; display: grid; grid-template-columns: 1.2fr .8fr; gap: 80px; align-items: center; }
 .eyebrow { margin: 0 0 12px; color: var(--accent); font-size: 11px; letter-spacing: .2em; font-weight: 800; }
@@ -174,6 +175,18 @@ button.danger.solid { background: #9c392d; color: white; border-color: #9c392d; 
 .trash-expiry { color: var(--accent); font-size: 11px; font-weight: 750; }
 .trash-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .trash-actions form { margin: 0; }
+.settings-page { max-width: 760px; margin: 0 auto; padding: 58px 0 80px; }
+.settings-page > h1 { margin: 0 0 28px; font: 700 52px/1.1 Georgia, "Songti SC", serif; }
+.settings-panel { padding: 28px; border: 1px solid var(--line); background: var(--card); box-shadow: var(--shadow); }
+.settings-panel h2 { margin: 0 0 8px; font: 700 28px/1.2 Georgia, "Songti SC", serif; }
+.settings-panel > div > p { color: var(--muted); line-height: 1.6; }
+.settings-message { margin: 20px 0; }
+.token-reveal { margin: 22px 0; padding: 18px; border: 1px solid var(--green); background: #eef4ef; }
+.token-reveal code { display: block; margin: 12px 0; padding: 12px; overflow-wrap: anywhere; background: white; user-select: all; }
+.credential-meta { margin: 24px 0; display: grid; gap: 8px; }
+.credential-meta div { display: grid; grid-template-columns: 110px 1fr; gap: 12px; }
+.credential-meta dt { color: var(--muted); }
+.credential-meta dd { margin: 0; }
 @media (max-width: 820px) {
   .hero { grid-template-columns: 1fr; gap: 30px; padding-top: 46px; }
   .section-heading, .detail-header, .trash-heading, .trash-card { align-items: stretch; flex-direction: column; }

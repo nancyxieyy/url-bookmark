@@ -87,6 +87,40 @@ YouTube 观看页会限制云服务器访问并经常返回 HTTP 429，因此对
 
 浏览器测试最初按文字查找 `Browser Test`，同时匹配到标签链接和下拉选项，触发 Playwright strict mode 错误。页面行为正确，但测试定位方式不可靠。改用 `role=link` 后，完整交互验收通过。
 
+### 5. 自定义 Server URL 需要匹配浏览器权限
+
+Extension Settings 第一版已经允许修改 Server URL，但 Manifest 仍然只永久授权 Render 域名。实际加载未打包扩展验收时检查到，自定义服务即使保存成功也会被 Chrome 的 host permission 拦截。最终没有申请永久 `<all_urls>`，而是把 HTTP/HTTPS 放入 `optional_host_permissions`；用户保存自定义地址时，扩展只申请该具体 origin 的权限。
+
+### 6. Web AI 推荐和插件 API 不能共用同一种认证要求
+
+现有 Web 标签下拉和插件都调用 `/api/bookmarks/{id}/tag-suggestions`。如果简单给全部 `/api` 挂 Bearer 依赖，Web 页面即使已经通过 Basic Auth，也会在生成推荐时收到 401。最后把实际推荐逻辑提取为共享函数：Web 使用 Basic Auth 保护的 `/bookmarks/{id}/tag-suggestions`，插件继续使用 Bearer 保护的 `/api/...`，没有要求同一个请求同时携带两种凭证。
+
+### 7. 旧式字段补丁不足以支持后续 Schema 演进
+
+原来的启动逻辑通过检查列名补充四个字段，没有 migration 版本，也无法证明失败后是否会错误推进。考虑到后续还会增加 Token、URL identity 和 Snapshot，最终选择轻量自定义 `schema_migrations`，而不是立即引入 Alembic。Migration 集中在独立模块、有固定顺序，每个版本的 DDL 和版本记录在同一事务中执行；测试覆盖空数据库、部分旧 Schema、重复运行和故意失败回滚。
+
+## Feature：版本化 Migration 与 Extension API Token
+
+### 为什么做
+
+后续 Browser DOM、URL identity 和 Snapshot 都会改变 Schema，继续使用启动时零散的字段补丁会难以验证升级顺序。与此同时，Basic Auth 是网页登录方式，不适合保存在插件中，因此需要一个权限受限、可立即吊销的独立 Token。
+
+### AI initial proposal
+
+AI 建议当前规模使用集中式自定义 `schema_migrations`，为每个版本提供独立事务；认证则把 Web Basic Auth 和 Extension Bearer Token 分开，并只给现有插件所需的 API 挂 Token 依赖。
+
+### Problem / disagreement
+
+实现认证时发现，Web 标签下拉也在调用 `/api/.../tag-suggestions`，不能直接把这个地址改成只接受 Bearer。扩展设置完成后又在实际 Manifest 验收中发现，自定义 Server URL 与固定 Render host permission 不一致。
+
+### Human decision
+
+保留共享的标签推荐业务函数，但为 Web 和插件提供分别受 Basic/Bearer 保护的入口。自定义服务器不申请永久全站权限，而是在用户保存设置时申请该具体 origin 的 optional host permission。Token 明文只展示一次，数据库只保存 hash。
+
+### Validation
+
+自动测试验证新旧 SQLite、幂等 migration、失败不推进版本、Token 生成/重新生成、权限边界和 CORS。随后启动真实 Uvicorn 验证 HTTP 状态，并使用 Chromium 加载未打包扩展验证 storage、Bearer header、401 UI 和运行时错误。
+
 ## 验证方式
 
 - 单元测试验证 URL 校验和正文提取成功/失败分支。
@@ -96,6 +130,8 @@ YouTube 观看页会限制云服务器访问并经常返回 HTTP 429，因此对
 - 使用 Chromium 以未打包扩展方式实际加载 Manifest V3 service worker 和 popup，操作抓取、推荐标签、备注、收藏和最近收藏删除，并检查运行时错误。
 - 外部请求通过 mock 隔离网络波动。
 - 使用真实网址验证 `programmercarl.com` 的标题和 Markdown 提取。
+- 使用临时 SQLite 数据库启动真实 Uvicorn，验证 `/health` 公开、Web 未登录 401、Basic Auth 设置页 200、插件 API 无 Token 401 及正确 Bearer 200。
+- 使用未打包 Manifest V3 扩展验证 Server URL/API Token 写入 `chrome.storage.local`、请求携带 Bearer、Token 错误提示和 service worker/popup 无异常。
 - 使用无头 Chromium 验证卡片/列表切换、整卡点击、详情按钮、Markdown 渲染、备注、首页删除确认、回收站恢复和彻底删除，并检查浏览器错误。
 - 使用拦截后的结构化模型响应验证推荐标签的展示、点选和保存，避免测试依赖真实 API 费用和网络稳定性。
 

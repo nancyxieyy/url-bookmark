@@ -1,8 +1,11 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import URL, inspect, text
+from sqlalchemy import URL
 from sqlmodel import Session, SQLModel, create_engine
+
+from app.migrations import run_migrations
+from app.models import Bookmark, BookmarkTagLink, Tag
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,63 +53,15 @@ engine = create_engine(DATABASE_URL, **engine_options)
 
 
 def create_db_and_tables() -> None:
-    SQLModel.metadata.create_all(engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("bookmark")}
-    if "deleted_at" not in columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text("ALTER TABLE bookmark ADD COLUMN deleted_at TIMESTAMP NULL")
-            )
-            connection.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_bookmark_deleted_at "
-                    "ON bookmark (deleted_at)"
-                )
-            )
-    if "is_draft" not in columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "ALTER TABLE bookmark ADD COLUMN is_draft "
-                    "BOOLEAN NOT NULL DEFAULT FALSE"
-                )
-            )
-            connection.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_bookmark_is_draft "
-                    "ON bookmark (is_draft)"
-                )
-            )
-    if "notes" not in columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "ALTER TABLE bookmark ADD COLUMN notes "
-                    "TEXT NOT NULL DEFAULT ''"
-                )
-            )
-    if "platform" not in columns:
-        from app.services.platforms import platform_for_url
-
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "ALTER TABLE bookmark ADD COLUMN platform "
-                    "VARCHAR(50) NOT NULL DEFAULT '其他'"
-                )
-            )
-            rows = connection.execute(text("SELECT id, url FROM bookmark")).mappings()
-            for row in rows:
-                connection.execute(
-                    text("UPDATE bookmark SET platform = :platform WHERE id = :id"),
-                    {"platform": platform_for_url(row["url"]), "id": row["id"]},
-                )
-            connection.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_bookmark_platform "
-                    "ON bookmark (platform)"
-                )
-            )
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[
+            Bookmark.__table__,
+            Tag.__table__,
+            BookmarkTagLink.__table__,
+        ],
+    )
+    run_migrations(engine)
 
 
 def get_session():

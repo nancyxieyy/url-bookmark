@@ -3,9 +3,13 @@
   "name": "URL Bookmark Capture",
   "version": "1.1.0",
   "description": "自动抓取当前网页并保存到 URL Bookmark。",
-  "permissions": ["activeTab", "notifications"],
+  "permissions": ["activeTab", "notifications", "storage", "scripting"],
   "host_permissions": [
     "https://url-bookmark.onrender.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "action": {
     "default_title": "收藏当前网页",
@@ -18,6 +22,7 @@
   "background": {
     "service_worker": "background.js"
   },
+  "options_page": "options.html",
   "commands": {
     "quick-save-inbox": {
       "suggested_key": {

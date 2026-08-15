@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import base64
 import math
-import os
-import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,12 +20,21 @@ from sqlmodel import Session, select
 
 load_dotenv()
 
+from app.auth import (
+    issue_extension_token,
+    require_extension_token,
+    valid_basic_authorization,
+)
 from app.database import create_db_and_tables, get_session
-from app.models import Bookmark, Tag
+from app.models import Bookmark, ExtensionCredential, Tag
 from app.schemas import (
+    BookmarkDuplicateCheckRequest,
+    BookmarkDuplicateCheckResponse,
     BookmarkConfirmRequest,
     BookmarkCreateRequest,
     BookmarkResponse,
+    BrowserTagSuggestionsRequest,
+    ExtractionResult,
     TagSuggestionsResponse,
 )
 from app.services.extractor import InvalidURLError, extract_page, validate_url
@@ -60,7 +66,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^(chrome-extension://[a-p]{32}|moz-extension://[^/]+)$",
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
@@ -70,17 +76,11 @@ markdown_renderer = MarkdownIt("commonmark", {"html": False})
 @app.middleware("http")
 async def optional_basic_auth(request: Request, call_next):
     """Protect public deployments when APP_PASSWORD is configured."""
-    if request.url.path == "/health":
+    if request.url.path == "/health" or request.url.path.startswith("/api/"):
         return await call_next(request)
 
-    password = os.getenv("APP_PASSWORD", "")
-    if not password:
-        return await call_next(request)
-
-    username = os.getenv("APP_USERNAME", "admin")
-    expected = base64.b64encode(f"{username}:{password}".encode()).decode()
     authorization = request.headers.get("Authorization", "")
-    if not secrets.compare_digest(authorization, f"Basic {expected}"):
+    if not valid_basic_authorization(authorization):
         return JSONResponse(
             {"detail": "Authentication required"},
             status_code=401,
@@ -197,7 +197,10 @@ def url_identity(url: str) -> str:
     return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
 
 
-def find_active_bookmark_by_url(session: Session, url: str) -> Bookmark | None:
+def find_active_bookmark_by_url(
+    session: Session,
+    url: str,
+) -> Bookmark | None:
     exact = session.exec(
         select(Bookmark)
         .where(
@@ -216,7 +219,11 @@ def find_active_bookmark_by_url(session: Session, url: str) -> Bookmark | None:
         .options(selectinload(Bookmark.tags))
     ).all()
     return next(
-        (bookmark for bookmark in bookmarks if url_identity(bookmark.url) == identity),
+        (
+            bookmark
+            for bookmark in bookmarks
+            if url_identity(bookmark.url) == identity
+        ),
         None,
     )
 
@@ -231,6 +238,70 @@ def health():
     return {"status": "ok"}
 
 
+def settings_response(
+    request: Request,
+    session: Session,
+    *,
+    revealed_token: str | None = None,
+    message: str = "",
+):
+    credential = session.get(ExtensionCredential, 1)
+    response = templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            "credential": credential,
+            "revealed_token": revealed_token,
+            "message": message,
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@app.get("/settings")
+def settings_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    return settings_response(request, session)
+
+
+@app.post("/settings/extension-token/generate")
+def generate_extension_token(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    if session.get(ExtensionCredential, 1) is not None:
+        return settings_response(
+            request,
+            session,
+            message="Extension API Token 已存在；如已遗失，请重新生成。",
+        )
+    _, raw_token = issue_extension_token(session)
+    return settings_response(
+        request,
+        session,
+        revealed_token=raw_token,
+        message="Token 已生成。请立即复制，它不会再次完整显示。",
+    )
+
+
+@app.post("/settings/extension-token/regenerate")
+def regenerate_extension_token(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _, raw_token = issue_extension_token(session)
+    return settings_response(
+        request,
+        session,
+        revealed_token=raw_token,
+        message="Token 已重新生成，旧 Token 已立即失效。请立即复制新 Token。",
+    )
+
+
 def create_bookmark_record(
     session: Session,
     url: str,
@@ -238,10 +309,21 @@ def create_bookmark_record(
     title_hint: str = "",
     is_draft: bool = False,
     notes: str = "",
+    markdown_content: str | None = None,
+    capture_method: str = "server",
 ) -> Bookmark:
     normalized_url = validate_url(url)
-    result = extract_page(normalized_url)
     fallback_title = title_hint.strip()[:500]
+    if capture_method == "browser":
+        browser_markdown = (markdown_content or "").strip()
+        result = ExtractionResult(
+            title=fallback_title or host_for(normalized_url),
+            markdown_content=browser_markdown,
+            status="success" if browser_markdown else "extract_failed",
+            error_message=None if browser_markdown else "未保存正文，仅保存网址。",
+        )
+    else:
+        result = extract_page(normalized_url)
     bookmark = Bookmark(
         url=normalized_url,
         title=fallback_title if result.status != "success" and fallback_title else result.title,
@@ -251,6 +333,7 @@ def create_bookmark_record(
         is_draft=is_draft,
         notes=notes.strip()[:5000],
         platform=platform_for_url(normalized_url),
+        capture_method=capture_method,
     )
     assign_tags(session, bookmark, raw_tags)
     session.add(bookmark)
@@ -433,7 +516,10 @@ def create_bookmark(
 
 
 @app.get("/api/tags", response_model=list[str])
-def api_tags(session: Session = Depends(get_session)):
+def api_tags(
+    session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
+):
     return [
         tag.name
         for tag in session.exec(
@@ -448,14 +534,10 @@ def api_tags(session: Session = Depends(get_session)):
     ]
 
 
-@app.post(
-    "/api/bookmarks/{bookmark_id}/tag-suggestions",
-    response_model=TagSuggestionsResponse,
-)
-def api_tag_suggestions(
+def tag_suggestions_for_bookmark(
     bookmark_id: int,
-    session: Session = Depends(get_session),
-):
+    session: Session,
+) -> TagSuggestionsResponse:
     bookmark = session.exec(
         select(Bookmark)
         .where(Bookmark.id == bookmark_id)
@@ -487,6 +569,29 @@ def api_tag_suggestions(
         ],
         new_tags=[tag for tag in suggestions.new_tags if tag.casefold() not in selected],
     )
+
+
+@app.post(
+    "/bookmarks/{bookmark_id}/tag-suggestions",
+    response_model=TagSuggestionsResponse,
+)
+def web_tag_suggestions(
+    bookmark_id: int,
+    session: Session = Depends(get_session),
+):
+    return tag_suggestions_for_bookmark(bookmark_id, session)
+
+
+@app.post(
+    "/api/bookmarks/{bookmark_id}/tag-suggestions",
+    response_model=TagSuggestionsResponse,
+)
+def api_tag_suggestions(
+    bookmark_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
+):
+    return tag_suggestions_for_bookmark(bookmark_id, session)
 
 
 @app.post("/bookmarks/{bookmark_id}/tags")
@@ -537,6 +642,55 @@ def serialize_bookmark(bookmark: Bookmark, *, duplicate: bool = False) -> Bookma
         error_message=bookmark.error_message,
         notes=bookmark.notes,
         duplicate=duplicate,
+        capture_method=bookmark.capture_method,
+    )
+
+
+@app.post(
+    "/api/bookmarks/check-duplicate",
+    response_model=BookmarkDuplicateCheckResponse,
+)
+def api_check_duplicate(
+    payload: BookmarkDuplicateCheckRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
+):
+    """Read-only duplicate check: never fetches a page or creates a draft."""
+    try:
+        normalized_url = validate_url(payload.url)
+    except InvalidURLError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    bookmark = find_active_bookmark_by_url(session, normalized_url)
+    return BookmarkDuplicateCheckResponse(
+        duplicate=bookmark is not None,
+        bookmark=serialize_bookmark(bookmark, duplicate=True) if bookmark else None,
+    )
+
+
+@app.post(
+    "/api/bookmarks/browser-tag-suggestions",
+    response_model=TagSuggestionsResponse,
+)
+def api_browser_tag_suggestions(
+    payload: BrowserTagSuggestionsRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
+):
+    """Generate suggestions only after the extension explicitly sends content."""
+    library_tags = [
+        tag.name for tag in session.exec(select(Tag).order_by(Tag.name)).all()
+    ]
+    try:
+        suggestions = recommend_tags(
+            payload.title,
+            payload.markdown_content,
+            library_tags,
+        )
+    except TagRecommendationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return TagSuggestionsResponse(
+        existing_tags=suggestions.existing_tags,
+        new_tags=suggestions.new_tags,
     )
 
 
@@ -549,6 +703,7 @@ def api_preview_bookmark(
     payload: BookmarkCreateRequest,
     response: Response,
     session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
 ):
     try:
         normalized_url = validate_url(payload.url)
@@ -574,6 +729,7 @@ def api_confirm_bookmark(
     bookmark_id: int,
     payload: BookmarkConfirmRequest,
     session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
 ):
     bookmark = session.exec(
         select(Bookmark)
@@ -598,6 +754,7 @@ def api_confirm_bookmark(
 def api_recent_bookmarks(
     limit: int = 3,
     session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
 ):
     safe_limit = max(1, min(limit, 10))
     bookmarks = session.exec(
@@ -611,7 +768,11 @@ def api_recent_bookmarks(
 
 
 @app.post("/api/bookmarks/{bookmark_id}/delete")
-def api_delete_bookmark(bookmark_id: int, session: Session = Depends(get_session)):
+def api_delete_bookmark(
+    bookmark_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
+):
     bookmark = session.get(Bookmark, bookmark_id)
     if bookmark is None or bookmark.deleted_at is not None or bookmark.is_draft:
         raise HTTPException(status_code=404, detail="收藏不存在。")
@@ -631,6 +792,7 @@ def api_create_bookmark(
     payload: BookmarkCreateRequest,
     response: Response,
     session: Session = Depends(get_session),
+    _: None = Depends(require_extension_token),
 ):
     try:
         normalized_url = validate_url(payload.url)
@@ -640,44 +802,32 @@ def api_create_bookmark(
             assign_tags(
                 session,
                 duplicate,
-                ",".join([*existing_tags, *payload.tags]),
+                ",".join(
+                    payload.tags
+                    if payload.replace_existing
+                    else [*existing_tags, *payload.tags]
+                ),
             )
             duplicate.updated_at = datetime.now(timezone.utc)
-            if payload.notes.strip():
+            if payload.replace_existing or payload.notes.strip():
                 duplicate.notes = payload.notes.strip()[:5000]
             session.add(duplicate)
             session.commit()
             session.refresh(duplicate)
             response.status_code = status.HTTP_200_OK
-            return BookmarkResponse(
-                id=duplicate.id,
-                url=duplicate.url,
-                title=duplicate.title,
-                tags=[tag.name for tag in duplicate.tags],
-                status=duplicate.status,
-                error_message=duplicate.error_message,
-                notes=duplicate.notes,
-                duplicate=True,
-            )
+            return serialize_bookmark(duplicate, duplicate=True)
         bookmark = create_bookmark_record(
             session,
             normalized_url,
             ",".join(payload.tags),
             title_hint=payload.title,
             notes=payload.notes,
+            markdown_content=payload.markdown_content,
+            capture_method=payload.capture_method,
         )
     except InvalidURLError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return BookmarkResponse(
-        id=bookmark.id,
-        url=bookmark.url,
-        title=bookmark.title,
-        tags=[tag.name for tag in bookmark.tags],
-        status=bookmark.status,
-        error_message=bookmark.error_message,
-        notes=bookmark.notes,
-        duplicate=False,
-    )
+    return serialize_bookmark(bookmark)
 
 
 @app.get("/bookmarks/{bookmark_id}")

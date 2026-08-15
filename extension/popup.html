@@ -13,7 +13,7 @@
         <p class="eyebrow">CAPTURE</p>
         <h1>URL Bookmark</h1>
       </div>
-      <a href="https://url-bookmark.onrender.com" target="_blank" title="打开管理页面">管理 ↗</a>
+      <nav><a id="manage-link" href="#" target="_blank" title="打开管理页面">管理 ↗</a><button id="settings-link" type="button">设置</button></nav>
     </header>
 
     <section class="page-card">
@@ -24,12 +24,25 @@
       </div>
     </section>
 
-    <div id="status" class="status success" role="status" aria-live="polite">正在自动抓取当前页面…</div>
+    <div id="status" class="status success" role="status" aria-live="polite">正在本地读取当前页面…</div>
+    <section id="capture-summary" class="capture-summary" hidden>
+      <div class="capture-result-line">
+        <strong id="capture-method">浏览器正文</strong>
+        <span id="capture-length"></span>
+      </div>
+      <p id="capture-source"></p>
+      <div id="fallback-actions" class="fallback-actions" hidden>
+        <button id="url-only-button" type="button">只收藏网址</button>
+      </div>
+    </section>
     <button id="preview-button" class="primary-button" type="button" hidden>
-      <span>重新抓取</span><span>→</span>
+      <span>重新读取页面</span><span>→</span>
     </button>
 
     <form id="bookmark-form" hidden>
+      <button id="ai-suggestions-button" class="secondary-button" type="button" hidden>
+        <span>生成 AI 推荐</span><span>＋</span>
+      </button>
       <div class="tag-select" data-tag-select>
         <label class="tag-select-label" id="popup-tags-label">标签 <span>可多选</span></label>
         <button
@@ -75,6 +88,7 @@
       <div id="recent-list" class="recent-list"><span class="muted">正在加载…</span></div>
     </section>
   </main>
+  <script src="settings.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,13 +1,18 @@
-const API_BASE = "https://url-bookmark.onrender.com";
-
 const form = document.querySelector("#bookmark-form");
 const retryButton = document.querySelector("#preview-button");
 const saveButton = document.querySelector("#save-button");
+const aiButton = document.querySelector("#ai-suggestions-button");
 const titleElement = document.querySelector("#page-title");
 const urlElement = document.querySelector("#page-url");
 const notesInput = document.querySelector("#notes");
 const statusElement = document.querySelector("#status");
 const recentList = document.querySelector("#recent-list");
+const captureSummary = document.querySelector("#capture-summary");
+const captureMethodElement = document.querySelector("#capture-method");
+const captureLengthElement = document.querySelector("#capture-length");
+const captureSourceElement = document.querySelector("#capture-source");
+const fallbackActions = document.querySelector("#fallback-actions");
+const urlOnlyButton = document.querySelector("#url-only-button");
 const tagSelect = document.querySelector("[data-tag-select]");
 const tagTrigger = tagSelect.querySelector("[data-tag-trigger]");
 const tagMenu = tagSelect.querySelector("[data-tag-menu]");
@@ -17,12 +22,37 @@ const newTagInput = tagSelect.querySelector("[data-new-tag]");
 const tagDone = tagSelect.querySelector("[data-tag-done]");
 const recommendedSection = document.querySelector("#recommended-section");
 const recommendedTagsElement = document.querySelector("#recommended-tags");
+const manageLink = document.querySelector("#manage-link");
+const settingsLink = document.querySelector("#settings-link");
 
-let currentPage = { title: "", url: "" };
-let previewBookmark = null;
+let currentPage = { title: "", url: "", tabId: null };
+let extensionSettings = null;
+let localCapture = null;
+let chosenContent = null;
+let duplicateBookmark = null;
 let availableTags = [];
 let recommendations = [];
 const selectedTags = new Set();
+
+settingsLink.addEventListener("click", () => chrome.runtime.openOptionsPage());
+
+async function apiFetch(path, options = {}) {
+  const requestOptions = { ...options };
+  requestOptions.headers = BookmarkSettings.headers(extensionSettings, options.headers || {});
+  try {
+    return await fetch(BookmarkSettings.endpoint(extensionSettings, path), requestOptions);
+  } catch (_) {
+    throw new Error("无法连接服务器，请检查 Server URL 和网络。");
+  }
+}
+
+async function apiPayload(response, fallbackMessage) {
+  let payload = {};
+  try { payload = await response.json(); } catch (_) {}
+  if (response.status === 401) throw new Error("API Token 无效，请在扩展设置中重新配置。");
+  if (!response.ok) throw new Error(payload.detail || fallbackMessage);
+  return payload;
+}
 
 function showStatus(message, type) {
   statusElement.textContent = message;
@@ -43,9 +73,7 @@ function updateTagSummary() {
   const tags = [...selectedTags];
   tagSummary.textContent = tags.length === 0
     ? "选择标签"
-    : tags.length <= 2
-      ? tags.join("、")
-      : `${tags.slice(0, 2).join("、")} +${tags.length - 2}`;
+    : tags.length <= 2 ? tags.join("、") : `${tags.slice(0, 2).join("、")} +${tags.length - 2}`;
 }
 
 function renderTagOptions() {
@@ -117,10 +145,7 @@ function closeTagMenu() {
   tagTrigger.setAttribute("aria-expanded", "false");
 }
 
-tagTrigger.addEventListener("click", () => {
-  if (tagMenu.hidden) openTagMenu();
-  else closeTagMenu();
-});
+tagTrigger.addEventListener("click", () => tagMenu.hidden ? openTagMenu() : closeTagMenu());
 tagDone.addEventListener("click", closeTagMenu);
 newTagInput.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
@@ -145,31 +170,26 @@ function renderRecent(bookmarks) {
     recentList.append(empty);
     return;
   }
-
   bookmarks.forEach((bookmark) => {
     const item = document.createElement("article");
     item.className = "recent-item";
     const link = document.createElement("a");
     link.className = "recent-copy";
-    link.href = `${API_BASE}/bookmarks/${bookmark.id}`;
+    link.href = `${extensionSettings.serverUrl}/bookmarks/${bookmark.id}`;
     link.target = "_blank";
     const title = document.createElement("strong");
     title.textContent = bookmark.title;
     const tags = document.createElement("small");
     tags.textContent = bookmark.tags.length ? bookmark.tags.join("、") : "暂无标签";
     link.append(title, tags);
-
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "recent-delete";
     remove.textContent = "删除";
     remove.addEventListener("click", async () => {
       if (!window.confirm(`把“${bookmark.title}”移入回收站吗？`)) return;
-      const response = await fetch(`${API_BASE}/api/bookmarks/${bookmark.id}/delete`, { method: "POST" });
-      if (!response.ok) {
-        showStatus("删除失败，请稍后再试。", "error");
-        return;
-      }
+      const response = await apiFetch(`/api/bookmarks/${bookmark.id}/delete`, { method: "POST" });
+      await apiPayload(response, "删除失败，请稍后再试。");
       showStatus("已移入回收站。", "success");
       await loadRecent();
     });
@@ -179,91 +199,156 @@ function renderRecent(bookmarks) {
 }
 
 async function loadRecent() {
-  const response = await fetch(`${API_BASE}/api/bookmarks/recent?limit=3`);
-  if (!response.ok) throw new Error("无法读取最近收藏");
-  renderRecent(await response.json());
+  const response = await apiFetch("/api/bookmarks/recent?limit=3");
+  renderRecent(await apiPayload(response, "无法读取最近收藏"));
 }
 
 async function loadAvailableTags() {
-  const response = await fetch(`${API_BASE}/api/tags`);
-  if (!response.ok) throw new Error("无法读取标签");
-  availableTags = uniqueTags(await response.json());
+  const response = await apiFetch("/api/tags");
+  availableTags = uniqueTags(await apiPayload(response, "无法读取标签"));
   renderTagOptions();
 }
 
-async function loadSuggestions(bookmarkId) {
-  try {
-    const response = await fetch(`${API_BASE}/api/bookmarks/${bookmarkId}/tag-suggestions`, { method: "POST" });
-    if (!response.ok) return;
-    const payload = await response.json();
-    recommendations = uniqueTags([...payload.existing_tags, ...payload.new_tags]);
-    renderRecommendations();
-  } catch (_) {
-    recommendations = [];
-    renderRecommendations();
-  }
+async function extractCurrentPage() {
+  await chrome.scripting.executeScript({
+    target: { tabId: currentPage.tabId },
+    files: ["vendor/Readability.js", "vendor/turndown.js", "capture.js"],
+  });
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: currentPage.tabId },
+    func: () => globalThis.captureBookmarkPage(),
+  });
+  return results[0]?.result || null;
+}
+
+function displayChosenContent(label, content) {
+  chosenContent = content;
+  captureSummary.hidden = false;
+  captureMethodElement.textContent = label;
+  captureLengthElement.textContent = content.markdownContent
+    ? `${content.length.toLocaleString()} 字符` : "未保存正文";
+  captureSourceElement.textContent = `来源：${localCapture?.source || new URL(currentPage.url).hostname}`;
+  fallbackActions.hidden = true;
+  aiButton.hidden = !content.markdownContent;
+  form.hidden = false;
+}
+
+function applyDuplicate(bookmark) {
+  duplicateBookmark = bookmark;
+  selectedTags.clear();
+  bookmark.tags.forEach((tag) => selectedTags.add(tag));
+  availableTags = uniqueTags([...availableTags, ...bookmark.tags]);
+  notesInput.value = bookmark.notes || "";
+  renderTagOptions();
+  form.hidden = false;
+  showStatus("该网址已收藏过，可以修改标签和备注。", "success");
+}
+
+async function checkDuplicate() {
+  const response = await apiFetch("/api/bookmarks/check-duplicate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: currentPage.url }),
+  });
+  const result = await apiPayload(response, "重复检测失败");
+  if (result.duplicate && result.bookmark) applyDuplicate(result.bookmark);
 }
 
 async function captureCurrentPage() {
-  if (!currentPage.url.startsWith("http://") && !currentPage.url.startsWith("https://")) {
-    showStatus("当前页面不是可收藏的 HTTP/HTTPS 网页。", "error");
-    return;
-  }
-
   retryButton.hidden = true;
   form.hidden = true;
-  showStatus("正在自动抓取当前页面…", "success");
+  captureSummary.hidden = true;
+  recommendations = [];
+  renderRecommendations();
+  showStatus("正在本地读取当前页面…", "success");
   try {
-    const response = await fetch(`${API_BASE}/api/bookmarks/preview`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...currentPage, tags: [], notes: "" }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "抓取失败");
-
-    previewBookmark = result;
-    selectedTags.clear();
-    result.tags.forEach((tag) => selectedTags.add(tag));
-    availableTags = uniqueTags([...availableTags, ...result.tags]);
-    recommendations = [];
-    notesInput.value = result.notes || "";
-    renderTagOptions();
-    renderRecommendations();
-    form.hidden = false;
-    showStatus(
-      result.duplicate
-        ? "该网址已收藏过，可以修改标签和备注。"
-        : result.status === "success"
-          ? "抓取完成，请确认标签和备注。"
-          : "正文未完整提取，仍可添加标签和备注后收藏。",
-      "success",
-    );
-
-    if (!result.duplicate && result.status === "success") {
-      void loadSuggestions(result.id);
+    localCapture = await extractCurrentPage();
+    if (!localCapture) throw new Error("页面没有返回可用内容。");
+    currentPage.title = localCapture.title || currentPage.title;
+    titleElement.textContent = currentPage.title;
+    if (localCapture.readability) {
+      displayChosenContent("✓ 已从浏览器读取正文", localCapture.readability);
+      showStatus("正文只保留在本机，点击收藏前不会上传。", "success");
+    } else {
+      chosenContent = null;
+      captureSummary.hidden = false;
+      captureMethodElement.textContent = "⚠ 未能自动识别正文";
+      captureLengthElement.textContent = "仍可只收藏网址";
+      captureSourceElement.textContent = `来源：${localCapture.source}`;
+      fallbackActions.hidden = false;
+      aiButton.hidden = true;
+      retryButton.hidden = false;
+      showStatus("未识别到正文，仍可只收藏网址。", "error");
     }
+    await checkDuplicate();
   } catch (error) {
-    showStatus(error.message || "抓取失败，请稍后重试。", "error");
+    localCapture = { source: new URL(currentPage.url).hostname };
+    chosenContent = null;
+    captureSummary.hidden = false;
+    captureMethodElement.textContent = "⚠ 无法读取页面正文";
+    captureLengthElement.textContent = "可只收藏网址";
+    captureSourceElement.textContent = `来源：${localCapture.source}`;
+    fallbackActions.hidden = false;
     retryButton.hidden = false;
+    showStatus(error.message || "无法读取当前页面。", "error");
+    await checkDuplicate().catch(() => {});
   }
 }
 
+urlOnlyButton.addEventListener("click", () => {
+  displayChosenContent("仅收藏网址", { markdownContent: "", length: 0 });
+  showStatus("将只保存网址、标题、标签和备注。", "success");
+});
+
+aiButton.addEventListener("click", async () => {
+  if (!chosenContent?.markdownContent) return;
+  aiButton.disabled = true;
+  aiButton.querySelector("span").textContent = "正在生成推荐…";
+  try {
+    const response = await apiFetch("/api/bookmarks/browser-tag-suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: currentPage.title, markdown_content: chosenContent.markdownContent }),
+    });
+    const payload = await apiPayload(response, "AI 推荐暂时不可用");
+    recommendations = uniqueTags([...payload.existing_tags, ...payload.new_tags]);
+    renderRecommendations();
+    openTagMenu();
+    showStatus(recommendations.length
+      ? "AI 推荐已生成，请点击需要的标签。" : "AI 没有给出新的标签建议。", "success");
+  } catch (error) {
+    recommendations = [];
+    renderRecommendations();
+    showStatus(`${error.message || "AI 推荐失败"}；仍然可以直接收藏。`, "error");
+  } finally {
+    aiButton.disabled = false;
+    aiButton.querySelector("span").textContent = "生成 AI 推荐";
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!previewBookmark) return;
+  if (!chosenContent && !duplicateBookmark) return;
   saveButton.disabled = true;
   closeTagMenu();
   showStatus("正在保存…", "success");
   try {
-    const response = await fetch(`${API_BASE}/api/bookmarks/${previewBookmark.id}/confirm`, {
+    const response = await apiFetch("/api/bookmarks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tags: [...selectedTags], notes: notesInput.value }),
+      body: JSON.stringify({
+        url: currentPage.url,
+        title: currentPage.title,
+        markdown_content: chosenContent?.markdownContent || "",
+        capture_method: "browser",
+        tags: [...selectedTags],
+        notes: notesInput.value,
+        replace_existing: Boolean(duplicateBookmark),
+      }),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "保存失败");
-    showStatus(previewBookmark.duplicate ? "标签和备注已更新。" : `已收藏：${result.title}`, "success");
+    const result = await apiPayload(response, "保存失败");
+    duplicateBookmark = result;
+    showStatus(result.duplicate ? "标签和备注已更新。" : `已收藏：${result.title}`, "success");
     saveButton.querySelector("span").textContent = "收藏成功";
     availableTags = uniqueTags([...availableTags, ...result.tags]);
     await loadRecent();
@@ -277,14 +362,29 @@ form.addEventListener("submit", async (event) => {
 retryButton.addEventListener("click", captureCurrentPage);
 
 async function loadPopup() {
+  extensionSettings = await BookmarkSettings.load();
+  manageLink.href = extensionSettings.serverUrl || "#";
+  if (!extensionSettings.serverUrl) {
+    showStatus("未配置服务器，请先打开扩展设置。", "error");
+    return;
+  }
+  if (!extensionSettings.apiToken) {
+    showStatus("未配置 API Token，请先打开扩展设置。", "error");
+    return;
+  }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  currentPage = { title: tab?.title || "未命名网页", url: tab?.url || "" };
+  currentPage = { title: tab?.title || "未命名网页", url: tab?.url || "", tabId: tab?.id };
   titleElement.textContent = currentPage.title;
   urlElement.textContent = currentPage.url;
   urlElement.title = currentPage.url;
-
-  void loadRecent().catch(() => {
+  if (!Number.isInteger(currentPage.tabId)
+      || (!currentPage.url.startsWith("http://") && !currentPage.url.startsWith("https://"))) {
+    showStatus("当前页面不是可收藏的 HTTP/HTTPS 网页。", "error");
+    return;
+  }
+  void loadRecent().catch((error) => {
     recentList.innerHTML = '<span class="muted">最近收藏暂时无法读取。</span>';
+    if (String(error.message || "").includes("API Token")) showStatus(error.message, "error");
   });
   void loadAvailableTags().catch(() => renderTagOptions());
   await captureCurrentPage();

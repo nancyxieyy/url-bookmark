@@ -23,6 +23,15 @@ class Tag(SQLModel, table=True):
     )
 
 
+class ExtensionCredential(SQLModel, table=True):
+    __tablename__ = "extension_credential"
+
+    id: int = Field(default=1, primary_key=True)
+    token_hash: str = Field(max_length=64)
+    created_at: datetime = Field(default_factory=utc_now)
+    regenerated_at: datetime = Field(default_factory=utc_now)
+
+
 class Bookmark(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     url: str = Field(index=True, max_length=2048)
@@ -32,6 +41,7 @@ class Bookmark(SQLModel, table=True):
     error_message: str | None = Field(default=None, max_length=1000)
     notes: str = Field(default="", max_length=5000)
     platform: str = Field(default="其他", index=True, max_length=50)
+    capture_method: str = Field(default="server", index=True, max_length=20)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     deleted_at: datetime | None = Field(default=None, index=True)

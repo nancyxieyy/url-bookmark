@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}设置 · URL Bookmark{% endblock %}
+{% block content %}
+<section class="settings-page">
+  <p class="eyebrow">SETTINGS</p>
+  <h1>设置</h1>
+  <section class="settings-panel">
+    <div>
+      <h2>Extension API Token</h2>
+      <p>浏览器扩展使用这个独立凭证访问有限的收藏 API，不会获得网页管理权限。</p>
+    </div>
+
+    {% if message %}<p class="settings-message status">● {{ message }}</p>{% endif %}
+
+    {% if revealed_token %}
+    <div class="token-reveal" data-token-reveal>
+      <p><strong>Token 只会完整显示这一次</strong></p>
+      <code data-token-value>{{ revealed_token }}</code>
+      <button type="button" class="button secondary" data-copy-token>复制 Token</button>
+      <p class="form-hint">请把它保存到扩展设置中。如遗失，请重新生成。</p>
+    </div>
+    {% endif %}
+
+    {% if credential %}
+    <dl class="credential-meta">
+      <div><dt>状态</dt><dd>已配置</dd></div>
+      <div><dt>首次生成</dt><dd>{{ credential.created_at.strftime('%Y-%m-%d %H:%M') }}</dd></div>
+      <div><dt>最近生成</dt><dd>{{ credential.regenerated_at.strftime('%Y-%m-%d %H:%M') }}</dd></div>
+    </dl>
+    <form method="post" action="/settings/extension-token/regenerate" onsubmit="return confirm('重新生成后，旧 Token 会立即失效。继续吗？')">
+      <button class="danger" type="submit">重新生成 Token</button>
+    </form>
+    {% else %}
+    <form method="post" action="/settings/extension-token/generate">
+      <button type="submit">生成 Token</button>
+    </form>
+    {% endif %}
+  </section>
+</section>
+<script src="{{ url_for('static', path='/settings.js') }}" defer></script>
+{% endblock %}

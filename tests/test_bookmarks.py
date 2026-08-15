@@ -10,8 +10,9 @@ from sqlmodel import Session, SQLModel, create_engine, select
 import app.database as database_module
 from app.database import get_database_url, get_session
 from app.database import normalize_database_url
+from app.auth import hash_extension_token
 from app.main import app, url_identity
-from app.models import Bookmark
+from app.models import Bookmark, ExtensionCredential
 from app.schemas import ExtractionResult
 from app.services.tag_recommender import TagSuggestions
 
@@ -90,6 +91,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             yield session
 
     app.dependency_overrides[get_session] = session_override
+    monkeypatch.setattr("app.main.create_db_and_tables", lambda: None)
     monkeypatch.setattr(
         "app.main.validate_url", lambda url: url.strip()
     )
@@ -98,6 +100,16 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
         lambda url: ExtractionResult("Test article", "# Body\n\nSearchable text"),
     )
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    extension_token = "test-extension-token"
+    api_headers = {"Authorization": f"Bearer {extension_token}"}
+    with Session(engine) as session:
+        session.add(
+            ExtensionCredential(
+                id=1,
+                token_hash=hash_extension_token(extension_token),
+            )
+        )
+        session.commit()
 
     try:
         with TestClient(app) as client:
@@ -178,7 +190,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                 ),
             )
             suggestions = client.post(
-                f"/api/bookmarks/{bookmark_id}/tag-suggestions"
+                f"/bookmarks/{bookmark_id}/tag-suggestions"
             )
             assert suggestions.status_code == 200
             assert suggestions.json() == {
@@ -285,6 +297,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
 
             api_response = client.post(
                 "/api/bookmarks",
+                headers=api_headers,
                 json={
                     "url": "https://example.com/from-extension",
                     "title": "Browser tab title",
@@ -300,6 +313,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
 
             preview_api = client.post(
                 "/api/bookmarks/preview",
+                headers=api_headers,
                 json={
                     "url": "https://example.com/two-step-extension",
                     "title": "Browser preview title",
@@ -311,23 +325,31 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             preview_id = preview_api.json()["id"]
             confirmed_api = client.post(
                 f"/api/bookmarks/{preview_id}/confirm",
+                headers=api_headers,
                 json={"tags": ["Inbox"], "notes": "确认时填写"},
             )
             assert confirmed_api.status_code == 200
             assert confirmed_api.json()["notes"] == "确认时填写"
             assert confirmed_api.json()["tags"] == ["Inbox"]
-            recent_api = client.get("/api/bookmarks/recent?limit=3")
+            recent_api = client.get(
+                "/api/bookmarks/recent?limit=3", headers=api_headers
+            )
             assert recent_api.status_code == 200
             assert any(item["id"] == preview_id for item in recent_api.json())
-            deleted_api = client.post(f"/api/bookmarks/{preview_id}/delete")
+            deleted_api = client.post(
+                f"/api/bookmarks/{preview_id}/delete", headers=api_headers
+            )
             assert deleted_api.status_code == 200
             assert all(
                 item["id"] != preview_id
-                for item in client.get("/api/bookmarks/recent?limit=10").json()
+                for item in client.get(
+                    "/api/bookmarks/recent?limit=10", headers=api_headers
+                ).json()
             )
 
             duplicate_api = client.post(
                 "/api/bookmarks",
+                headers=api_headers,
                 json={
                     "url": "https://EXAMPLE.com:443/from-extension#same-page",
                     "title": "Duplicate browser tab",
@@ -339,7 +361,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert duplicate_api.json()["duplicate"] is True
             assert duplicate_api.json()["tags"] == ["Inbox", "Extension", "New tag"]
 
-            tags_response = client.get("/api/tags")
+            tags_response = client.get("/api/tags", headers=api_headers)
             assert tags_response.status_code == 200
             assert tags_response.json() == ["Extension", "Inbox", "New tag"]
 
@@ -348,6 +370,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                 headers={
                     "Origin": f"chrome-extension://{'a' * 32}",
                     "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "authorization,content-type",
                 },
             )
             assert cors_response.status_code == 200
@@ -357,6 +380,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
 
             youtube_response = client.post(
                 "/api/bookmarks",
+                headers=api_headers,
                 json={
                     "url": "https://www.youtube.com/watch?v=platform-test",
                     "title": "YouTube tab",
@@ -408,6 +432,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             )
             failed_capture = client.post(
                 "/api/bookmarks",
+                headers=api_headers,
                 json={
                     "url": "https://example.com/offline",
                     "title": "Title captured by the extension",
@@ -418,7 +443,8 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert failed_capture.json()["status"] == "fetch_failed"
             assert failed_capture.json()["title"] == "Title captured by the extension"
             unavailable_suggestions = client.post(
-                f"/api/bookmarks/{failed_capture.json()['id']}/tag-suggestions"
+                f"/api/bookmarks/{failed_capture.json()['id']}/tag-suggestions",
+                headers=api_headers,
             )
             assert unavailable_suggestions.status_code == 409
 
