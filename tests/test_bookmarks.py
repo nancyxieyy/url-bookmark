@@ -9,6 +9,7 @@ from app.database import normalize_database_url
 from app.main import app
 from app.models import Bookmark
 from app.schemas import ExtractionResult
+from app.services.tag_recommender import TagSuggestions
 
 
 def test_normalize_database_url_for_supabase():
@@ -51,6 +52,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
         "app.main.extract_page",
         lambda url: ExtractionResult("Test article", "# Body\n\nSearchable text"),
     )
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     try:
         with TestClient(app) as client:
@@ -63,6 +65,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                 follow_redirects=False,
             )
             assert response.status_code == 303
+            assert "/edit?recommend=1" in response.headers["location"]
 
             search = client.get("/?q=Searchable&tag=AI")
             assert search.status_code == 200
@@ -71,6 +74,22 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             with Session(engine) as session:
                 bookmark = session.exec(select(Bookmark)).one()
                 bookmark_id = bookmark.id
+
+            monkeypatch.setattr(
+                "app.main.recommend_tags",
+                lambda title, markdown, existing: TagSuggestions(
+                    existing_tags=["AI", "工作"],
+                    new_tags=["FastAPI"],
+                ),
+            )
+            suggestions = client.post(
+                f"/api/bookmarks/{bookmark_id}/tag-suggestions"
+            )
+            assert suggestions.status_code == 200
+            assert suggestions.json() == {
+                "existing_tags": ["工作"],
+                "new_tags": ["FastAPI"],
+            }
 
             edit = client.post(
                 f"/bookmarks/{bookmark_id}/edit",
@@ -139,6 +158,10 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert failed_capture.status_code == 201
             assert failed_capture.json()["status"] == "fetch_failed"
             assert failed_capture.json()["title"] == "Title captured by the extension"
+            unavailable_suggestions = client.post(
+                f"/api/bookmarks/{failed_capture.json()['id']}/tag-suggestions"
+            )
+            assert unavailable_suggestions.status_code == 409
 
             monkeypatch.setenv("APP_USERNAME", "demo")
             monkeypatch.setenv("APP_PASSWORD", "correct horse battery staple")

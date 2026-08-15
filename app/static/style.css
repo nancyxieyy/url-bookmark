@@ -48,6 +48,22 @@ input:focus, select:focus { outline: 2px solid rgba(216,91,56,.2); border-color:
 .tag-menu-option:has(input:focus-visible) { outline: 2px solid rgba(216,91,56,.25); }
 .tag-menu-footer { padding: 8px; border-top: 1px solid var(--line); }
 .tag-menu-footer button { width: 100%; min-height: 38px; line-height: 38px; }
+.tag-recommender { margin-top: 8px; padding: 16px; border: 1px solid var(--line); background: #f8f4eb; }
+.tag-recommender-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tag-recommender-heading div { display: grid; gap: 3px; }
+.tag-recommender-heading small, .tag-recommend-status { color: var(--muted); font-size: 12px; }
+.tag-recommend-status { margin: 10px 0 0; line-height: 1.5; }
+.button.compact { min-height: 34px; padding: 0 12px; font-size: 12px; line-height: 32px; white-space: nowrap; }
+.tag-recommend-results { margin-top: 14px; display: grid; gap: 12px; }
+.tag-recommend-results[hidden] { display: none; }
+.tag-recommend-group { display: grid; gap: 7px; }
+.tag-recommend-group-label { color: var(--muted); font-size: 11px; font-weight: 750; }
+.tag-recommend-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.tag-suggestion { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--green); font-size: 12px; line-height: 30px; }
+.tag-suggestion:hover, .tag-suggestion[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: white; }
+.tag-suggestion.new { border-style: dashed; color: var(--accent); }
+.tag-suggestion.new:hover, .tag-suggestion.new[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: white; }
+.tag-recommender.loading [data-recommend-tags] { cursor: wait; opacity: .6; }
 button, .button { border: 0; min-height: 46px; padding: 0 20px; background: var(--ink); color: white; font: 700 14px/46px inherit; cursor: pointer; text-decoration: none; text-align: center; }
 button:hover, .button:hover { background: var(--accent); }
 .capture-form button { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; }

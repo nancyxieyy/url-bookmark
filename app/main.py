@@ -19,8 +19,9 @@ from sqlmodel import Session, select
 
 from app.database import create_db_and_tables, get_session
 from app.models import Bookmark, Tag
-from app.schemas import BookmarkCreateRequest, BookmarkResponse
+from app.schemas import BookmarkCreateRequest, BookmarkResponse, TagSuggestionsResponse
 from app.services.extractor import InvalidURLError, extract_page, validate_url
+from app.services.tag_recommender import TagRecommendationError, recommend_tags
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -194,13 +195,62 @@ def create_bookmark(
     bookmark = create_bookmark_record(
         session, normalized_url, merge_tag_fields(tags, tag_choices)
     )
-    message = "收藏成功。" if bookmark.status == "success" else "网址已收藏，但正文抓取失败，可稍后重试。"
+    if bookmark.status == "success" and os.getenv("OPENAI_API_KEY", "").strip():
+        message = "正文已抓取，请确认 AI 推荐标签。"
+        return RedirectResponse(
+            f"/bookmarks/{bookmark.id}/edit?recommend=1&message={quote_plus(message)}",
+            status_code=303,
+        )
+    message = (
+        "收藏成功。"
+        if bookmark.status == "success"
+        else "网址已收藏，但正文抓取失败，可稍后重试。"
+    )
     return RedirectResponse(f"/?message={quote_plus(message)}", status_code=303)
 
 
 @app.get("/api/tags", response_model=list[str])
 def api_tags(session: Session = Depends(get_session)):
     return [tag.name for tag in session.exec(select(Tag).order_by(Tag.name)).all()]
+
+
+@app.post(
+    "/api/bookmarks/{bookmark_id}/tag-suggestions",
+    response_model=TagSuggestionsResponse,
+)
+def api_tag_suggestions(
+    bookmark_id: int,
+    session: Session = Depends(get_session),
+):
+    bookmark = session.exec(
+        select(Bookmark)
+        .where(Bookmark.id == bookmark_id)
+        .options(selectinload(Bookmark.tags))
+    ).first()
+    if bookmark is None:
+        raise HTTPException(status_code=404, detail="收藏不存在。")
+    if bookmark.status != "success" or not bookmark.markdown_content.strip():
+        raise HTTPException(status_code=409, detail="正文抓取成功后才能生成标签推荐。")
+
+    library_tags = [
+        tag.name for tag in session.exec(select(Tag).order_by(Tag.name)).all()
+    ]
+    try:
+        suggestions = recommend_tags(
+            bookmark.title,
+            bookmark.markdown_content,
+            library_tags,
+        )
+    except TagRecommendationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    selected = {tag.name.casefold() for tag in bookmark.tags}
+    return TagSuggestionsResponse(
+        existing_tags=[
+            tag for tag in suggestions.existing_tags if tag.casefold() not in selected
+        ],
+        new_tags=[tag for tag in suggestions.new_tags if tag.casefold() not in selected],
+    )
 
 
 @app.post(

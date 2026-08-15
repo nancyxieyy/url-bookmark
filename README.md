@@ -1,6 +1,6 @@
 # URL Bookmark
 
-这是一个网址收藏夹作业。Web 端用于搜索和整理收藏，轻量浏览器扩展用于在浏览网页时快速采集。后端会自动读取标题、提取主要正文并保存为 Markdown；收藏、标签和正文都保存在本地 SQLite 数据库中，关闭应用后不会丢失。
+这是一个网址收藏夹作业。Web 端用于搜索和整理收藏，轻量浏览器扩展用于在浏览网页时快速采集。后端会自动读取标题、提取主要正文并保存为 Markdown；本地使用 SQLite，线上使用 Supabase PostgreSQL 持久化收藏、标签和正文。
 
 这个项目最重要的产品规则是：**抓取失败不等于收藏失败。**
 
@@ -10,6 +10,7 @@
 - 使用 Trafilatura 识别主要内容并转换为 Markdown
 - 新增、查看、编辑和删除收藏
 - 为一个收藏添加多个标签，并按标签筛选
+- 抓取成功后使用 LLM 推荐标签，由用户确认后再保存
 - 在标题、URL 和 Markdown 正文中进行关键词搜索
 - 使用 `success`、`fetch_failed`、`extract_failed` 记录抓取状态
 - 抓取失败时保留网址，之后可以手动重新抓取
@@ -32,6 +33,10 @@
 
 正文提取使用 Trafilatura，而不是直接对 HTML 调用 `get_text()`。后者通常会把导航栏、菜单、页脚和 Cookie 提示等非正文内容一起保存，而 Trafilatura 会先判断网页的主要内容区域，再输出 Markdown。
 
+正文抓取成功后，Web 端可以把标题、已有标签列表和 Markdown 前 10,000 字发送给 LLM，请它推荐标签。推荐结果不会自动写入数据库，而是分成“优先匹配已有标签”和“建议的新标签”展示；用户点击确认并保存修改后才会入库。服务端会再次校验模型输出，总推荐数最多 5 个，其中新标签最多 2 个。这个功能遵循：
+
+> AI 提建议，人维护自己的分类体系。
+
 抓取链路如下：
 
 ```text
@@ -41,7 +46,7 @@
 
 URL 抓取设置了请求超时、最多 5 次重定向和 5 MB 响应限制。每次重定向后都会重新检查目标地址，避免跳转到 localhost 或私网地址。针对本地代理常用的 `198.18.0.0/15` Fake-IP，只允许域名解析结果使用该网段，直接输入该 IP 仍会被拒绝。
 
-在功能范围上，我主动放弃了 React、账号体系、云数据库、向量搜索、LLM 摘要和基于 Playwright 的动态网页抓取。这些功能不属于题目要求的核心链路，而且会增加实现和运行复杂度。当前优先保证的是：
+在功能范围上，我主动放弃了 React、账号体系、向量搜索、LLM 摘要和基于 Playwright 的动态网页抓取。这些功能不属于题目要求的核心链路，而且会增加实现和运行复杂度。LLM 只用于低风险的标签建议，不负责自动分类。当前优先保证的是：
 
 > 收藏 → 正文提取 → Markdown 保存 → 标签整理 → 搜索找回
 
@@ -60,7 +65,8 @@ URL 抓取设置了请求超时、最多 5 次重定向和 5 MB 响应限制。�
         ↓
 FastAPI 路由与产品规则
         ├── SQLModel → SQLite（Bookmark / Tag）
-        └── Extractor → httpx → Trafilatura → Markdown
+        ├── Extractor → httpx → Trafilatura → Markdown
+        └── Tag Recommender → OpenAI Responses API → 用户确认
 ```
 
 ```text
@@ -76,6 +82,7 @@ app/
 ├── database.py             # SQLite 连接
 ├── schemas.py              # 抓取结果类型
 ├── services/extractor.py   # URL 校验、HTTP 获取与正文提取
+├── services/tag_recommender.py # AI 标签推荐与输出校验
 ├── templates/              # Jinja2 页面
 └── static/style.css        # 页面样式
 tests/                      # 自动化测试与浏览器验收脚本
@@ -105,10 +112,13 @@ uvicorn app.main:app --reload
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/nancyxieyy/url-bookmark)
 
-部署时 Render 会根据 `render.yaml` 要求填写两个 Secret：
+部署时 Render 会根据 `render.yaml` 要求填写三个 Secret：
 
 - `DATABASE_URL`：Supabase Dashboard 的 **Connect → Session pooler** PostgreSQL 连接串。建议使用 Session pooler，保留连接串中的 `sslmode=require`，不要提交到 GitHub。
 - `APP_PASSWORD`：网页版访问密码，建议使用至少 16 位随机密码。
+- `OPENAI_API_KEY`：用于生成 AI 标签推荐；未配置时只有推荐功能不可用，收藏和正文抓取不受影响。
+
+`OPENAI_MODEL` 默认使用 `gpt-5.6-luna`，可以在 Render 环境变量中替换成账号可用的其他文本模型。
 
 `APP_USERNAME` 默认为 `admin`。部署完成后，浏览器访问 Render 提供的固定 `*.onrender.com` 地址时会显示 HTTP Basic Auth 登录框。
 
@@ -145,6 +155,7 @@ Edge 的步骤相同，扩展管理地址为 `edge://extensions`。
 ```http
 GET /api/tags
 POST /api/bookmarks
+POST /api/bookmarks/{id}/tag-suggestions
 ```
 
 ```json
@@ -170,6 +181,7 @@ pytest -q
 - 正文提取成功和网页访问失败
 - 收藏新增、搜索、标签筛选、编辑和删除
 - 扩展 JSON API、标签接口和扩展来源 CORS
+- AI 推荐输出清洗、已有标签优先、数量限制和失败降级
 
 外部网页请求在自动化测试中使用 mock，避免把网络波动误判成代码错误。
 
@@ -186,6 +198,7 @@ uvicorn app.main:app --port 8765
 ```bash
 source .venv/bin/activate
 python tests/browser_smoke.py
+python tests/ai_tag_browser_smoke.py
 ```
 
 保持后端运行时，还可以让 Chromium 真正加载未打包扩展并检查 service worker、popup、标签 API 和页面运行错误：
@@ -218,6 +231,7 @@ AI 协作过程中出现过几个实际问题：
 - 不执行 JavaScript，因此高度依赖客户端渲染的页面可能无法提取。
 - 登录墙、付费墙、验证码和严格反爬网站可能抓取失败。
 - 搜索使用 SQLite `LIKE`，没有分词、相关性排序或语义搜索。
+- AI 标签推荐依赖 `OPENAI_API_KEY` 和外部模型服务；请求失败时不会影响收藏数据。
 - 标签名称目前区分大小写。
 - 这是本地单用户作业，没有账号、权限和跨设备同步。
 - 扩展目前固定连接本机 `127.0.0.1:8000`，使用前需要先启动后端。

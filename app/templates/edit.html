@@ -11,6 +11,21 @@
     <input id="url" name="url" type="url" value="{{ bookmark.url }}" required>
     {% set selector_id = "edit-tags" %}
     {% include "_tag_selector.html" %}
+    {% if bookmark.status == 'success' and bookmark.markdown_content %}
+    <section
+      class="tag-recommender"
+      data-tag-recommender
+      data-endpoint="/api/bookmarks/{{ bookmark.id }}/tag-suggestions"
+      data-auto-recommend="{% if request.query_params.get('recommend') == '1' %}true{% else %}false{% endif %}"
+    >
+      <div class="tag-recommender-heading">
+        <div><strong>AI 推荐</strong><small>只提供建议，不会自动保存</small></div>
+        <button class="button secondary compact" type="button" data-recommend-tags>生成推荐</button>
+      </div>
+      <p class="tag-recommend-status" data-recommend-status>优先匹配已有标签，必要时最多建议 2 个新标签。</p>
+      <div class="tag-recommend-results" data-recommend-results hidden></div>
+    </section>
+    {% endif %}
     <p class="form-hint">修改网址不会自动覆盖已有正文；需要时请在详情页点击“重新抓取”。</p>
     <button type="submit">保存修改</button>
   </form>

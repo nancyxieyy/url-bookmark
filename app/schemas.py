@@ -24,3 +24,8 @@ class BookmarkResponse(BaseModel):
     tags: list[str]
     status: str
     error_message: str | None
+
+
+class TagSuggestionsResponse(BaseModel):
+    existing_tags: list[str]
+    new_tags: list[str]

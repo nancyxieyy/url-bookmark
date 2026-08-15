@@ -29,16 +29,12 @@ document.querySelectorAll("[data-tag-select]").forEach((selector) => {
     selector.classList.toggle("open", open);
   };
 
-  const addNewTag = () => {
-    const name = newTagInput.value.trim();
-    if (!name) return;
-
-    const existing = [...selector.querySelectorAll("[data-tag-option]")].find(
+  const findOption = (name) =>
+    [...selector.querySelectorAll("[data-tag-option]")].find(
       (input) => input.value.toLocaleLowerCase() === name.toLocaleLowerCase(),
     );
-    if (existing) {
-      existing.checked = true;
-    } else {
+
+  const createOption = (name) => {
       const label = document.createElement("label");
       label.className = "tag-menu-option";
 
@@ -46,7 +42,6 @@ document.querySelectorAll("[data-tag-select]").forEach((selector) => {
       checkbox.type = "checkbox";
       checkbox.name = "tag_choices";
       checkbox.value = name;
-      checkbox.checked = true;
       checkbox.dataset.tagOption = "";
 
       const check = document.createElement("span");
@@ -58,10 +53,29 @@ document.querySelectorAll("[data-tag-select]").forEach((selector) => {
       text.textContent = name;
       label.append(checkbox, check, text);
       options.prepend(label);
-    }
+      return checkbox;
+  };
 
-    newTagInput.value = "";
+  const setTagSelected = (name, selected = true) => {
+    const cleanName = name.trim().slice(0, 50);
+    if (!cleanName) return false;
+    const option = findOption(cleanName) || createOption(cleanName);
+    option.checked = selected;
     updateSummary();
+    return option.checked;
+  };
+
+  const addNewTag = () => {
+    const name = newTagInput.value.trim();
+    if (!name) return;
+
+    setTagSelected(name);
+    newTagInput.value = "";
+  };
+
+  selector.tagSelection = {
+    isSelected: (name) => Boolean(findOption(name)?.checked),
+    toggle: (name) => setTagSelected(name, !findOption(name)?.checked),
   };
 
   trigger.addEventListener("click", () => setOpen(menu.hidden));
@@ -92,4 +106,82 @@ document.querySelectorAll("[data-tag-select]").forEach((selector) => {
   });
 
   updateSummary();
+});
+
+document.querySelectorAll("[data-tag-recommender]").forEach((recommender) => {
+  const form = recommender.closest("form");
+  const selector = form?.querySelector("[data-tag-select]");
+  const button = recommender.querySelector("[data-recommend-tags]");
+  const status = recommender.querySelector("[data-recommend-status]");
+  const results = recommender.querySelector("[data-recommend-results]");
+  if (!selector?.tagSelection) return;
+
+  const renderGroup = (label, tags, kind) => {
+    if (!tags.length) return null;
+    const group = document.createElement("div");
+    group.className = "tag-recommend-group";
+    const heading = document.createElement("span");
+    heading.className = "tag-recommend-group-label";
+    heading.textContent = label;
+    const list = document.createElement("div");
+    list.className = "tag-recommend-list";
+
+    tags.forEach((tag) => {
+      const suggestion = document.createElement("button");
+      suggestion.type = "button";
+      suggestion.className = `tag-suggestion ${kind}`;
+      suggestion.textContent = `＋ ${tag}`;
+      suggestion.setAttribute("aria-pressed", "false");
+      suggestion.addEventListener("click", () => {
+        const selected = selector.tagSelection.toggle(tag);
+        suggestion.setAttribute("aria-pressed", String(selected));
+        suggestion.textContent = `${selected ? "✓" : "＋"} ${tag}`;
+      });
+      list.append(suggestion);
+    });
+
+    group.append(heading, list);
+    return group;
+  };
+
+  const loadSuggestions = async () => {
+    if (recommender.classList.contains("loading")) return;
+    recommender.classList.add("loading");
+    button.disabled = true;
+    status.textContent = "正在阅读正文并整理标签…";
+    results.hidden = true;
+    results.replaceChildren();
+
+    try {
+      const response = await fetch(recommender.dataset.endpoint, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "AI 推荐暂时不可用。");
+
+      const existing = renderGroup("优先匹配已有标签", payload.existing_tags, "existing");
+      const fresh = renderGroup("建议的新标签", payload.new_tags, "new");
+      if (existing) results.append(existing);
+      if (fresh) results.append(fresh);
+      results.hidden = !existing && !fresh;
+      status.textContent = existing || fresh
+        ? "点击推荐项才会加入；保存修改后才会入库。"
+        : "没有找到足够相关的新建议，可以继续使用当前标签。";
+      button.textContent = "重新生成";
+    } catch (error) {
+      status.textContent = error.message || "AI 推荐暂时不可用。";
+    } finally {
+      recommender.classList.remove("loading");
+      button.disabled = false;
+    }
+  };
+
+  button.addEventListener("click", loadSuggestions);
+  if (recommender.dataset.autoRecommend === "true") {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("recommend");
+    window.history.replaceState({}, "", url);
+    loadSuggestions();
+  }
 });
