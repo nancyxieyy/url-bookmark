@@ -9,8 +9,17 @@
   <form class="capture-form" method="post" action="/bookmarks">
     <label for="url">网页地址</label>
     <input id="url" name="url" type="url" placeholder="https://example.com/article" required>
-    <label for="tags">标签 <small>使用逗号分隔</small></label>
-    <input id="tags" name="tags" placeholder="AI, 技术, 稍后读">
+    <fieldset class="tag-picker">
+      <legend>标签 <small>点击选择，可多选</small></legend>
+      <div class="tag-options">
+        {% for choice in tag_choices %}
+        <label class="tag-choice">
+          <input type="checkbox" name="tag_choices" value="{{ choice }}">
+          <span>{{ choice }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
     <button type="submit">收藏并抓取 <span>→</span></button>
   </form>
 </section>

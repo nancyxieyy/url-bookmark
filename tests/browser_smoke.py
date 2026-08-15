@@ -30,7 +30,10 @@ with sync_playwright() as playwright:
 
     # A valid URL is retained even if its content cannot be fetched.
     page.locator("#url").fill(TEST_URL)
-    page.locator("#tags").fill("Browser Test, MVP")
+    page.locator(".tag-choice").filter(has_text="AI").click()
+    page.locator(".tag-choice").filter(has_text="稍后读").click()
+    assert page.get_by_role("checkbox", name="AI").is_checked()
+    assert page.get_by_role("checkbox", name="稍后读").is_checked()
     page.get_by_role("button", name="收藏并抓取").click()
     page.wait_for_load_state("networkidle")
     assert "网址已收藏" in page.locator(".notice.success").inner_text()
@@ -38,7 +41,7 @@ with sync_playwright() as playwright:
         has=page.locator(f'a[href="{TEST_URL}"]')
     )
     assert test_card.count() == 1
-    assert test_card.get_by_role("link", name="Browser Test", exact=True).is_visible()
+    assert test_card.get_by_role("link", name="AI", exact=True).is_visible()
 
     test_card.get_by_role("link", name="查看详情 →").click()
     page.wait_for_load_state("networkidle")
@@ -47,9 +50,16 @@ with sync_playwright() as playwright:
 
     page.get_by_role("link", name="编辑").click()
     page.locator("#title").fill("Browser acceptance bookmark")
+    assert page.get_by_role("checkbox", name="AI").is_checked()
+    page.locator(".tag-choice").filter(has_text="AI").click()
+    page.locator(".tag-choice").filter(has_text="工作").click()
+    assert not page.get_by_role("checkbox", name="AI").is_checked()
+    assert page.get_by_role("checkbox", name="工作").is_checked()
     page.get_by_role("button", name="保存修改").click()
     page.wait_for_load_state("networkidle")
     assert page.get_by_role("heading", name="Browser acceptance bookmark").is_visible()
+    assert page.get_by_text("工作", exact=True).is_visible()
+    assert page.get_by_text("AI", exact=True).count() == 0
 
     page.on("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="删除").click()

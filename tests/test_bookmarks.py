@@ -56,7 +56,10 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
         with TestClient(app) as client:
             response = client.post(
                 "/bookmarks",
-                data={"url": "https://example.com/article", "tags": "AI, Python"},
+                data={
+                    "url": "https://example.com/article",
+                    "tag_choices": ["AI", "Python"],
+                },
                 follow_redirects=False,
             )
             assert response.status_code == 303
@@ -74,7 +77,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                 data={
                     "title": "Edited title",
                     "url": "https://example.com/edited",
-                    "tags": "Product",
+                    "tag_choices": ["工作"],
                 },
                 follow_redirects=False,
             )
@@ -82,7 +85,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
 
             detail = client.get(f"/bookmarks/{bookmark_id}")
             assert "Edited title" in detail.text
-            assert "Product" in detail.text
+            assert "工作" in detail.text
 
             deleted = client.post(
                 f"/bookmarks/{bookmark_id}/delete", follow_redirects=False

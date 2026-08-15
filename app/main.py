@@ -24,6 +24,7 @@ from app.services.extractor import InvalidURLError, extract_page, validate_url
 
 
 APP_DIR = Path(__file__).resolve().parent
+DEFAULT_TAG_CHOICES = ("Inbox", "稍后读", "AI", "技术", "学习", "工作")
 
 
 @asynccontextmanager
@@ -86,6 +87,20 @@ def assign_tags(session: Session, bookmark: Bookmark, raw_tags: str) -> None:
             session.add(tag)
         tags.append(tag)
     bookmark.tags = tags
+
+
+def available_tag_choices(session: Session) -> list[str]:
+    choices = list(DEFAULT_TAG_CHOICES)
+    seen = {choice.casefold() for choice in choices}
+    for tag in session.exec(select(Tag).order_by(Tag.name)).all():
+        if tag.name.casefold() not in seen:
+            choices.append(tag.name)
+            seen.add(tag.name.casefold())
+    return choices
+
+
+def merge_tag_fields(raw_tags: str, selected_tags: list[str]) -> str:
+    return ",".join([raw_tags, *selected_tags])
 
 
 def remove_orphan_tags(session: Session) -> None:
@@ -153,7 +168,13 @@ def index(
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"bookmarks": bookmarks, "tags": tags, "q": q, "active_tag": tag},
+        context={
+            "bookmarks": bookmarks,
+            "tags": tags,
+            "tag_choices": available_tag_choices(session),
+            "q": q,
+            "active_tag": tag,
+        },
     )
 
 
@@ -161,6 +182,7 @@ def index(
 def create_bookmark(
     url: str = Form(...),
     tags: str = Form(""),
+    tag_choices: list[str] = Form([]),
     session: Session = Depends(get_session),
 ):
     try:
@@ -168,7 +190,9 @@ def create_bookmark(
     except InvalidURLError as exc:
         return RedirectResponse(f"/?error={quote_plus(str(exc))}", status_code=303)
 
-    bookmark = create_bookmark_record(session, normalized_url, tags)
+    bookmark = create_bookmark_record(
+        session, normalized_url, merge_tag_fields(tags, tag_choices)
+    )
     message = "收藏成功。" if bookmark.status == "success" else "网址已收藏，但正文抓取失败，可稍后重试。"
     return RedirectResponse(f"/?message={quote_plus(message)}", status_code=303)
 
@@ -242,7 +266,11 @@ def edit_bookmark_page(
     return templates.TemplateResponse(
         request=request,
         name="edit.html",
-        context={"bookmark": bookmark},
+        context={
+            "bookmark": bookmark,
+            "tag_choices": available_tag_choices(session),
+            "selected_tags": {tag.name for tag in bookmark.tags},
+        },
     )
 
 
@@ -252,6 +280,7 @@ def update_bookmark(
     title: str = Form(...),
     url: str = Form(...),
     tags: str = Form(""),
+    tag_choices: list[str] = Form([]),
     session: Session = Depends(get_session),
 ):
     bookmark = session.get(Bookmark, bookmark_id)
@@ -271,7 +300,7 @@ def update_bookmark(
     bookmark.title = clean_title[:500]
     bookmark.url = normalized_url
     bookmark.updated_at = datetime.now(timezone.utc)
-    assign_tags(session, bookmark, tags)
+    assign_tags(session, bookmark, merge_tag_fields(tags, tag_choices))
     session.add(bookmark)
     session.commit()
     remove_orphan_tags(session)
