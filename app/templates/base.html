@@ -13,12 +13,6 @@
     <a class="trash-link" href="/trash">回收站</a>
   </header>
   <main class="container">
-    {% if request.query_params.get('message') %}
-      <div class="notice success">{{ request.query_params.get('message') }}</div>
-    {% endif %}
-    {% if request.query_params.get('error') %}
-      <div class="notice error">{{ request.query_params.get('error') }}</div>
-    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <script src="{{ url_for('static', path='/tag-selector.js') }}" defer></script>

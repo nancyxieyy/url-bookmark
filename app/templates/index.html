@@ -44,6 +44,12 @@
     <label for="url">网页地址</label>
     <input id="url" name="url" type="url" placeholder="https://example.com/article" required>
     <button class="capture-primary" type="submit">抓取 <span>→</span></button>
+    {% if request.query_params.get('message') %}
+    <p class="capture-status status">● {{ request.query_params.get('message') }}</p>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+    <p class="capture-status status error">△ {{ request.query_params.get('error') }}</p>
+    {% endif %}
   </form>
   {% endif %}
 </section>

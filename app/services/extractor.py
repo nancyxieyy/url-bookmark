@@ -82,7 +82,7 @@ def validate_url(url: str) -> str:
 
 def _download_html(url: str) -> tuple[str, str]:
     current_url = url
-    timeout = httpx.Timeout(12.0, connect=5.0)
+    timeout = httpx.Timeout(8.0, connect=4.0)
     try:
         with httpx.Client(
             timeout=timeout,
@@ -174,10 +174,12 @@ def _youtube_metadata(url: str) -> ExtractionResult | None:
 
 
 def extract_page(url: str) -> ExtractionResult:
-    normalized_url = validate_url(url)
-    youtube_result = _youtube_metadata(normalized_url)
-    if youtube_result is not None:
-        return youtube_result
+    normalized_url = url.strip()
+    if _is_youtube_video(normalized_url):
+        normalized_url = validate_url(normalized_url)
+        youtube_result = _youtube_metadata(normalized_url)
+        if youtube_result is not None:
+            return youtube_result
     try:
         html, final_url = _download_html(normalized_url)
     except FetchError as exc:

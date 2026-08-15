@@ -190,6 +190,17 @@ def url_identity(url: str) -> str:
 
 
 def find_active_bookmark_by_url(session: Session, url: str) -> Bookmark | None:
+    exact = session.exec(
+        select(Bookmark)
+        .where(
+            Bookmark.url == url,
+            Bookmark.deleted_at.is_(None),
+            Bookmark.is_draft.is_(False),
+        )
+        .options(selectinload(Bookmark.tags))
+    ).first()
+    if exact is not None:
+        return exact
     identity = url_identity(url)
     bookmarks = session.exec(
         select(Bookmark)

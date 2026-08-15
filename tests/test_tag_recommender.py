@@ -56,7 +56,7 @@ def test_recommend_tags_prioritizes_and_cleans_existing_tags(monkeypatch):
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert captured["payload"]["thinking"] == {"type": "disabled"}
     article = json.loads(captured["payload"]["messages"][1]["content"])
-    assert len(article["markdown_excerpt"]) == 10_000
+    assert len(article["markdown_excerpt"]) == tag_recommender.MAX_CONTENT_CHARS
 
 
 def test_recommend_tags_requires_api_key(monkeypatch):

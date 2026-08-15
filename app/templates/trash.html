@@ -11,6 +11,9 @@
     <a class="button secondary" href="/">← 返回我的收藏</a>
   </div>
 
+  {% if request.query_params.get('message') %}<p class="page-feedback status">● {{ request.query_params.get('message') }}</p>{% endif %}
+  {% if request.query_params.get('error') %}<p class="page-feedback status error">△ {{ request.query_params.get('error') }}</p>{% endif %}
+
   {% if purged_count %}<div class="notice success">已自动清理 {{ purged_count }} 条超过 30 天的收藏。</div>{% endif %}
 
   {% if bookmarks %}

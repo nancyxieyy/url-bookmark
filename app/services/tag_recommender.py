@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import httpx
 
 
-MAX_CONTENT_CHARS = 10_000
+MAX_CONTENT_CHARS = 4_000
 MAX_TOTAL_SUGGESTIONS = 5
 MAX_NEW_SUGGESTIONS = 2
 
@@ -101,7 +101,7 @@ def recommend_tags(
                 "Content-Type": "application/json",
             },
             json=request_payload,
-            timeout=20.0,
+            timeout=10.0,
         )
         response.raise_for_status()
         raw_suggestions = json.loads(_response_text(response.json()))

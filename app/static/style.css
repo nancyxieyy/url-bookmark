@@ -85,27 +85,30 @@ button:hover, .button:hover { background: var(--accent); }
 .search-status { position: absolute; top: calc(100% + 5px); right: 0; min-height: 16px; color: var(--muted); font-size: 11px; }
 .library-results.loading { opacity: .55; transition: opacity .15s; }
 .bookmark-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.bookmark-card { min-height: 310px; padding: 24px; border: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; cursor: pointer; transition: transform .2s, box-shadow .2s; }
+.bookmark-card { height: 430px; min-height: 430px; padding: 24px; overflow: hidden; border: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; cursor: pointer; transition: transform .2s, box-shadow .2s; }
 .bookmark-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
 .bookmark-card:focus-visible { outline: 3px solid rgba(216,91,56,.25); border-color: var(--accent); }
 .card-top, .card-footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .status { font-size: 12px; color: var(--green); font-weight: 750; }
 .status.fetch_failed, .status.extract_failed { color: var(--accent); }
 .date, .domain { color: var(--muted); font-size: 12px; }
-.bookmark-card h3 { margin: 32px 0 8px; font: 700 27px/1.2 Georgia, "Songti SC", serif; }
+.bookmark-card h3 { min-height: 3.6em; margin: 28px 0 8px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font: 700 27px/1.2 Georgia, "Songti SC", serif; }
 .bookmark-card h3 a { text-decoration: none; }
-.domain { text-decoration: none; }
-.excerpt { color: var(--muted); line-height: 1.65; font-size: 14px; white-space: pre-line; }
+.domain { overflow: hidden; text-overflow: ellipsis; text-decoration: none; white-space: nowrap; }
+.excerpt { max-height: 8.25em; overflow: hidden; color: var(--muted); line-height: 1.65; font-size: 14px; white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; }
 .card-footer { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); }
 .card-actions { display: flex; align-items: center; gap: 12px; }
 .card-delete { min-height: auto; padding: 0; background: transparent; color: #9c392d; font-size: 12px; line-height: normal; }
 .card-delete:hover { background: transparent; color: var(--accent); }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.bookmark-card .tag-list { max-height: 52px; overflow: hidden; }
 .tag { display: inline-block; padding: 5px 9px; color: var(--green); background: #e6eee8; font-size: 11px; text-decoration: none; }
 .detail-link { color: var(--accent); font-size: 12px; font-weight: 750; text-decoration: none; white-space: nowrap; }
 .notice { margin: 18px 0; padding: 13px 16px; border-left: 3px solid; background: var(--card); }
 .notice.success { border-color: var(--green); }
 .notice.error { border-color: var(--accent); }
+.status.error { color: var(--accent); }
+.page-feedback { margin: -18px 0 22px; }
 .empty-state { padding: 70px 20px; border: 1px dashed var(--line); text-align: center; color: var(--muted); }
 .empty-state span { font-size: 35px; color: var(--accent); }
 .back-link { display: inline-block; margin: 34px 0; color: var(--muted); text-decoration: none; }
@@ -144,10 +147,10 @@ button.danger.solid { background: #9c392d; color: white; border-color: #9c392d; 
 .markdown-body pre code { padding: 0; background: transparent; color: inherit; }
 .markdown-body img { max-width: 100%; height: auto; }
 .library.list-view .bookmark-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.library.list-view .bookmark-card { min-height: 0; padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+.library.list-view .bookmark-card { height: 82px; min-height: 82px; padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
 .library.list-view .bookmark-card:hover { transform: none; }
 .library.list-view .card-top, .library.list-view .domain, .library.list-view .excerpt, .library.list-view .card-actions { display: none; }
-.library.list-view .bookmark-card h3 { margin: 0; font-size: 19px; }
+.library.list-view .bookmark-card h3 { min-height: 0; margin: 0; display: block; overflow: hidden; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }
 .library.list-view .card-footer { margin: 0; padding: 0; border: 0; }
 .empty-copy { padding: 60px 30px; color: var(--muted); text-align: center; }
 .edit-panel { max-width: 720px; margin: 0 auto 80px; }

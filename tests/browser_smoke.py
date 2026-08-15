@@ -29,13 +29,13 @@ with sync_playwright() as playwright:
     page.locator("#url").fill("http://127.0.0.1/private")
     page.get_by_role("button", name="抓取").click()
     page.wait_for_load_state("networkidle")
-    assert "不能访问本机或内网地址" in page.locator(".notice.error").inner_text()
+    assert "不能访问本机或内网地址" in page.locator("#capture .capture-status.error").inner_text()
 
     # A valid URL is retained even if its content cannot be fetched.
     page.locator("#url").fill(TEST_URL)
     page.get_by_role("button", name="抓取").click()
     page.wait_for_load_state("networkidle")
-    assert "仍可添加标签并收藏" in page.locator(".notice.success").inner_text()
+    assert "仍可保存网址" in page.locator("#capture .capture-status").inner_text()
     assert page.get_by_role("button", name="收藏").is_visible()
     page.locator("[data-tag-trigger]").click()
     assert page.locator("[data-tag-menu]").is_visible()
@@ -53,12 +53,17 @@ with sync_playwright() as playwright:
     page.get_by_label("备注 可选").fill("浏览器验收备注")
     page.get_by_role("button", name="收藏").click()
     page.wait_for_load_state("networkidle")
-    assert "收藏成功" in page.locator(".notice.success").inner_text()
+    assert "收藏成功" in page.locator("#capture .capture-status").inner_text()
+    assert page.locator("main.container > .notice").count() == 0
     test_card = page.locator(".bookmark-card").filter(
         has=page.locator(f'a[href="{TEST_URL}"]')
     )
     assert test_card.count() == 1
     assert test_card.get_by_role("link", name="Browser Test", exact=True).is_visible()
+    card_heights = page.locator(".bookmark-card").evaluate_all(
+        "nodes => nodes.map(node => Math.round(node.getBoundingClientRect().height))"
+    )
+    assert len(set(card_heights)) == 1
 
     # The default grid can be changed to a compact list without reloading.
     assert not page.locator("[data-library]").evaluate("node => node.classList.contains('list-view')")
@@ -71,7 +76,7 @@ with sync_playwright() as playwright:
     page.locator("#url").fill(f"{TEST_URL}#already-saved")
     page.get_by_role("button", name="抓取").click()
     page.wait_for_load_state("networkidle")
-    assert "该网址已收藏过，可以修改标签" in page.locator(".notice.success").inner_text()
+    assert "该网址已收藏过，可以修改标签" in page.locator("#capture .capture-status").inner_text()
     assert page.get_by_role("button", name="保存标签").is_visible()
     page.locator("#capture [data-tag-trigger]").click()
     assert page.get_by_role("checkbox", name="Browser Test").is_checked()
@@ -80,7 +85,7 @@ with sync_playwright() as playwright:
     page.locator("#capture").get_by_role("button", name="完成").click()
     page.get_by_role("button", name="保存标签").click()
     page.wait_for_load_state("networkidle")
-    assert "标签已更新" in page.locator(".notice.success").inner_text()
+    assert "标签已更新" in page.locator("#capture .capture-status").inner_text()
     assert page.locator(f'a[href="{TEST_URL}"]').count() == 1
 
     # Search filters while typing without a separate submit click.
