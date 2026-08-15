@@ -5,131 +5,69 @@
   --card: #fffdf7;
   --line: #d9d2c4;
   --accent: #d85b38;
+  --green: #2f6c58;
   --green-soft: #e6eee8;
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-
-body {
-  margin: 0;
-  width: 380px;
-  min-height: 520px;
-  color: var(--ink);
-  background: var(--paper);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
-}
-
+body { margin: 0; width: 380px; min-height: 520px; color: var(--ink); background: var(--paper); font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif; }
 main { padding: 22px; }
-
-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  padding-bottom: 17px;
-  border-bottom: 1px solid var(--ink);
-}
-
-.eyebrow {
-  margin: 0 0 5px;
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .2em;
-}
-
+header { display: flex; align-items: start; justify-content: space-between; padding-bottom: 17px; border-bottom: 1px solid var(--ink); }
+.eyebrow { margin: 0 0 5px; color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .2em; }
 h1 { margin: 0; font: 700 23px/1 Georgia, serif; }
 header a { color: var(--muted); font-size: 11px; text-decoration: none; }
 
-.page-card {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 12px;
-  margin: 20px 0;
-  padding: 16px;
-  background: var(--card);
-  border: 1px solid var(--line);
-}
+.page-card { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; margin: 20px 0 12px; padding: 16px; background: var(--card); border: 1px solid var(--line); }
+.favicon-placeholder { display: grid; place-items: center; width: 36px; height: 36px; color: var(--accent); border: 1px solid var(--line); }
+h2 { overflow: hidden; margin: 0 0 6px; font: 700 16px/1.25 Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
+#page-url { overflow: hidden; margin: 0; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 
-.favicon-placeholder {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  color: var(--accent);
-  border: 1px solid var(--line);
-}
-
-h2 {
-  overflow: hidden;
-  margin: 0 0 6px;
-  font: 700 16px/1.25 Georgia, "Songti SC", serif;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-#page-url {
-  overflow: hidden;
-  margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-form { display: grid; gap: 10px; }
-form[hidden] { display: none; }
-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-legend, label { margin-bottom: 8px; font-size: 12px; font-weight: 750; }
-legend span, label span { color: var(--muted); font-weight: 400; }
+form { margin-top: 12px; display: grid; gap: 10px; }
+label { margin-bottom: 8px; font-size: 12px; font-weight: 750; }
 label span { color: var(--muted); font-weight: 400; }
-
-.tag-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
-.tag-button {
-  min-height: 28px;
-  padding: 0 10px;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--line);
-  font-size: 11px;
-  cursor: pointer;
-}
-.tag-button.selected { color: var(--ink); background: var(--green-soft); border-color: #9ab5a5; }
-.muted { color: var(--muted); font-size: 11px; }
-
-input, textarea {
-  width: 100%;
-  height: 42px;
-  padding: 0 12px;
-  color: var(--ink);
-  background: white;
-  border: 1px solid var(--line);
-  font: inherit;
-}
+input, textarea { width: 100%; height: 42px; padding: 0 12px; color: var(--ink); background: white; border: 1px solid var(--line); font: inherit; }
 textarea { min-height: 72px; padding-top: 10px; line-height: 1.45; resize: vertical; }
 input:focus, textarea:focus { outline: 2px solid rgba(216,91,56,.18); border-color: var(--accent); }
+.muted { color: var(--muted); font-size: 11px; }
 
-.primary-button, #save-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 45px;
-  margin-top: 4px;
-  padding: 0 15px;
-  color: white;
-  background: var(--ink);
-  border: 0;
-  font-weight: 750;
-  cursor: pointer;
-}
+.tag-select { position: relative; }
+.tag-select-label { display: block; margin: 0 0 8px; }
+.tag-select-trigger { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; background: white; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.tag-select.open .tag-select-trigger { border-color: var(--green); outline: 2px solid rgba(47,108,88,.12); }
+.tag-select-chevron { color: var(--muted); font-size: 16px; transition: transform .15s; }
+.tag-select.open .tag-select-chevron { transform: rotate(180deg); }
+.tag-select-menu { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; right: 0; max-height: 390px; overflow: hidden; border: 1px solid var(--line); background: white; box-shadow: 0 16px 36px rgba(33,45,39,.16); display: flex; flex-direction: column; }
+.tag-new-row { min-height: 46px; margin: 0; padding: 0 11px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); color: var(--accent); }
+.tag-new-icon { flex: 0 0 auto; font-size: 17px; }
+.tag-new-row input { min-height: 44px; padding: 0; border: 0; outline: 0; }
+.tag-new-row input:focus { border: 0; outline: 0; }
+.tag-new-row input::placeholder { color: var(--accent); opacity: 1; }
+.tag-menu-recommender { padding: 12px; border-bottom: 1px solid var(--line); background: #f8f4eb; }
+.tag-recommender-heading { margin-bottom: 9px; }
+.tag-recommender-heading div { display: grid; gap: 2px; }
+.tag-recommender-heading strong { font-size: 12px; }
+.tag-recommender-heading small { color: var(--muted); font-size: 10px; }
+.tag-recommend-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-suggestion { min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--green); font-size: 10px; cursor: pointer; }
+.tag-suggestion:hover, .tag-suggestion[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: white; }
+.tag-option-list { min-height: 0; max-height: 190px; padding: 6px; overflow-y: auto; }
+.tag-menu-option { min-height: 36px; margin: 0; padding: 0 8px; display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.tag-menu-option:hover { background: var(--paper); }
+.tag-menu-option input { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; opacity: 0; pointer-events: none; }
+.tag-check { width: 18px; height: 18px; border: 1px solid var(--line); display: grid; place-items: center; color: transparent; font-size: 11px; }
+.tag-menu-option input:checked + .tag-check { border-color: var(--green); background: var(--green); color: white; }
+.tag-menu-footer { padding: 7px; border-top: 1px solid var(--line); }
+.tag-menu-footer button { width: 100%; min-height: 36px; border: 0; background: var(--ink); color: white; font-weight: 750; cursor: pointer; }
+
+.primary-button, #save-button { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 45px; margin-top: 4px; padding: 0 15px; color: white; background: var(--ink); border: 0; font-weight: 750; cursor: pointer; }
 .primary-button:hover, #save-button:hover { background: var(--accent); }
 .primary-button:disabled, #save-button:disabled { cursor: wait; opacity: .65; }
-
 .shortcut { margin: 0; color: var(--muted); font-size: 10px; text-align: center; }
-.status { display: none; margin-top: 13px; padding: 10px 12px; border-left: 3px solid; font-size: 12px; line-height: 1.45; }
-.status.success { display: block; color: #265744; background: var(--green-soft); border-color: #2f6c58; }
+.status { display: none; margin: 0; padding: 9px 11px; border-left: 3px solid; font-size: 11px; line-height: 1.45; }
+.status.success { display: block; color: #265744; background: var(--green-soft); border-color: var(--green); }
 .status.error { display: block; color: #873727; background: #f6e7e1; border-color: var(--accent); }
+
 .recent-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--ink); }
 .recent-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
 .recent-heading h3 { margin: 0; font: 700 16px Georgia, "Songti SC", serif; }
