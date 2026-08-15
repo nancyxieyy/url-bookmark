@@ -9,17 +9,8 @@
   <form class="capture-form" method="post" action="/bookmarks">
     <label for="url">网页地址</label>
     <input id="url" name="url" type="url" placeholder="https://example.com/article" required>
-    <fieldset class="tag-picker">
-      <legend>标签 <small>点击选择，可多选</small></legend>
-      <div class="tag-options">
-        {% for choice in tag_choices %}
-        <label class="tag-choice">
-          <input type="checkbox" name="tag_choices" value="{{ choice }}">
-          <span>{{ choice }}</span>
-        </label>
-        {% endfor %}
-      </div>
-    </fieldset>
+    {% set selector_id = "capture-tags" %}
+    {% include "_tag_selector.html" %}
     <button type="submit">收藏并抓取 <span>→</span></button>
   </form>
 </section>

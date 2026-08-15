@@ -9,17 +9,8 @@
     <input id="title" name="title" value="{{ bookmark.title }}" maxlength="500" required>
     <label for="url">网页地址</label>
     <input id="url" name="url" type="url" value="{{ bookmark.url }}" required>
-    <fieldset class="tag-picker">
-      <legend>标签 <small>点击选择，可多选</small></legend>
-      <div class="tag-options">
-        {% for choice in tag_choices %}
-        <label class="tag-choice">
-          <input type="checkbox" name="tag_choices" value="{{ choice }}" {% if choice in selected_tags %}checked{% endif %}>
-          <span>{{ choice }}</span>
-        </label>
-        {% endfor %}
-      </div>
-    </fieldset>
+    {% set selector_id = "edit-tags" %}
+    {% include "_tag_selector.html" %}
     <p class="form-hint">修改网址不会自动覆盖已有正文；需要时请在详情页点击“重新抓取”。</p>
     <button type="submit">保存修改</button>
   </form>

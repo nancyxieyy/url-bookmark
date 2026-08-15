@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 
 BASE_URL = "http://127.0.0.1:8765"
 SCREENSHOT = Path("/tmp/url-bookmark-home.png")
+TAG_MENU_SCREENSHOT = Path("/tmp/url-bookmark-tags-open.png")
 TEST_URL = f"https://example.invalid/article?browser-test={uuid4().hex}"
 
 
@@ -30,10 +31,19 @@ with sync_playwright() as playwright:
 
     # A valid URL is retained even if its content cannot be fetched.
     page.locator("#url").fill(TEST_URL)
-    page.locator(".tag-choice").filter(has_text="AI").click()
-    page.locator(".tag-choice").filter(has_text="稍后读").click()
+    page.locator("[data-tag-trigger]").click()
+    assert page.locator("[data-tag-menu]").is_visible()
+    assert page.get_by_placeholder("添加新的标签").is_visible()
+    page.get_by_placeholder("添加新的标签").fill("Browser Test")
+    page.get_by_placeholder("添加新的标签").press("Enter")
+    page.locator(".tag-menu-option").filter(has_text="AI").click()
+    page.locator(".tag-menu-option").filter(has_text="稍后读").click()
+    assert page.get_by_role("checkbox", name="Browser Test").is_checked()
     assert page.get_by_role("checkbox", name="AI").is_checked()
     assert page.get_by_role("checkbox", name="稍后读").is_checked()
+    page.screenshot(path=str(TAG_MENU_SCREENSHOT), full_page=True)
+    page.get_by_role("button", name="完成").click()
+    assert page.locator("[data-tag-menu]").is_hidden()
     page.get_by_role("button", name="收藏并抓取").click()
     page.wait_for_load_state("networkidle")
     assert "网址已收藏" in page.locator(".notice.success").inner_text()
@@ -41,7 +51,7 @@ with sync_playwright() as playwright:
         has=page.locator(f'a[href="{TEST_URL}"]')
     )
     assert test_card.count() == 1
-    assert test_card.get_by_role("link", name="AI", exact=True).is_visible()
+    assert test_card.get_by_role("link", name="Browser Test", exact=True).is_visible()
 
     test_card.get_by_role("link", name="查看详情 →").click()
     page.wait_for_load_state("networkidle")
@@ -50,11 +60,14 @@ with sync_playwright() as playwright:
 
     page.get_by_role("link", name="编辑").click()
     page.locator("#title").fill("Browser acceptance bookmark")
+    page.locator("[data-tag-trigger]").click()
+    assert page.get_by_role("checkbox", name="Browser Test").is_checked()
     assert page.get_by_role("checkbox", name="AI").is_checked()
-    page.locator(".tag-choice").filter(has_text="AI").click()
-    page.locator(".tag-choice").filter(has_text="工作").click()
+    page.locator(".tag-menu-option").filter(has_text="AI").click()
+    page.locator(".tag-menu-option").filter(has_text="工作").click()
     assert not page.get_by_role("checkbox", name="AI").is_checked()
     assert page.get_by_role("checkbox", name="工作").is_checked()
+    page.get_by_role("button", name="完成").click()
     page.get_by_role("button", name="保存修改").click()
     page.wait_for_load_state("networkidle")
     assert page.get_by_role("heading", name="Browser acceptance bookmark").is_visible()
@@ -68,5 +81,8 @@ with sync_playwright() as playwright:
 
     page.screenshot(path=str(SCREENSHOT), full_page=True)
     assert not browser_errors, browser_errors
-    print(f"Browser smoke test passed; screenshot: {SCREENSHOT}")
+    print(
+        "Browser smoke test passed; screenshots: "
+        f"{SCREENSHOT}, {TAG_MENU_SCREENSHOT}"
+    )
     browser.close()

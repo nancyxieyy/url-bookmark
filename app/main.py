@@ -172,6 +172,7 @@ def index(
             "bookmarks": bookmarks,
             "tags": tags,
             "tag_choices": available_tag_choices(session),
+            "selected_tags": set(),
             "q": q,
             "active_tag": tag,
         },
