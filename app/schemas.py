@@ -24,6 +24,7 @@ class BookmarkResponse(BaseModel):
     tags: list[str]
     status: str
     error_message: str | None
+    duplicate: bool = False
 
 
 class TagSuggestionsResponse(BaseModel):

@@ -30,7 +30,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "保存失败");
-    await notify("已保存到 Inbox", result.title);
+    await notify(result.duplicate ? "该网址已收藏过" : "已保存到 Inbox", result.title);
   } catch (error) {
     await notify("保存失败", "请确认本地 URL Bookmark 服务正在运行。");
   }

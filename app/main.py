@@ -7,10 +7,10 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -162,6 +162,34 @@ def host_for(url: str) -> str:
     return urlparse(url).hostname or url
 
 
+def url_identity(url: str) -> str:
+    """Return a stable comparison key without changing the URL we display."""
+    parsed = urlsplit(url.strip())
+    hostname = (parsed.hostname or "").lower()
+    port = parsed.port
+    default_port = (parsed.scheme.lower() == "http" and port == 80) or (
+        parsed.scheme.lower() == "https" and port == 443
+    )
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    netloc = hostname if port is None or default_port else f"{hostname}:{port}"
+    path = parsed.path or "/"
+    return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
+
+
+def find_active_bookmark_by_url(session: Session, url: str) -> Bookmark | None:
+    identity = url_identity(url)
+    bookmarks = session.exec(
+        select(Bookmark)
+        .where(Bookmark.deleted_at.is_(None), Bookmark.is_draft.is_(False))
+        .options(selectinload(Bookmark.tags))
+    ).all()
+    return next(
+        (bookmark for bookmark in bookmarks if url_identity(bookmark.url) == identity),
+        None,
+    )
+
+
 templates.env.globals["host_for"] = host_for
 templates.env.globals["trash_days_remaining"] = trash_days_remaining
 
@@ -202,6 +230,7 @@ def index(
     q: str = "",
     tag: str = "",
     suggest_for: int | None = None,
+    duplicate_for: int | None = None,
     session: Session = Depends(get_session),
 ):
     purge_expired_bookmarks(session)
@@ -243,6 +272,18 @@ def index(
             )
             .options(selectinload(Bookmark.tags))
         ).first()
+    duplicate = None
+    if duplicate_for is not None:
+        duplicate = session.exec(
+            select(Bookmark)
+            .where(
+                Bookmark.id == duplicate_for,
+                Bookmark.deleted_at.is_(None),
+                Bookmark.is_draft.is_(False),
+            )
+            .options(selectinload(Bookmark.tags))
+        ).first()
+    capture_bookmark = duplicate or preview
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -251,11 +292,12 @@ def index(
             "tags": tags,
             "tag_choices": available_tag_choices(session),
             "selected_tags": set(),
-            "preview_bookmark": preview,
-            "preview_tag_choices": available_tag_choices(session),
-            "preview_selected_tags": (
-                {item.name for item in preview.tags}
-                if preview
+            "capture_bookmark": capture_bookmark,
+            "capture_is_duplicate": duplicate is not None,
+            "capture_tag_choices": available_tag_choices(session),
+            "capture_selected_tags": (
+                {item.name for item in capture_bookmark.tags}
+                if capture_bookmark
                 else set()
             ),
             "q": q,
@@ -273,6 +315,14 @@ def preview_bookmark(
         normalized_url = validate_url(url)
     except InvalidURLError as exc:
         return RedirectResponse(f"/?error={quote_plus(str(exc))}", status_code=303)
+
+    duplicate = find_active_bookmark_by_url(session, normalized_url)
+    if duplicate is not None:
+        return RedirectResponse(
+            f"/?duplicate_for={duplicate.id}&message="
+            f"{quote_plus('该网址已收藏过，可以修改标签。')}#capture",
+            status_code=303,
+        )
 
     bookmark = create_bookmark_record(
         session,
@@ -302,6 +352,14 @@ def create_bookmark(
         normalized_url = validate_url(url)
     except InvalidURLError as exc:
         return RedirectResponse(f"/?error={quote_plus(str(exc))}", status_code=303)
+
+    duplicate = find_active_bookmark_by_url(session, normalized_url)
+    if duplicate is not None:
+        return RedirectResponse(
+            f"/?duplicate_for={duplicate.id}&message="
+            f"{quote_plus('该网址已收藏过，可以修改标签。')}#capture",
+            status_code=303,
+        )
 
     bookmark = create_bookmark_record(
         session, normalized_url, merge_tag_fields(tags, tag_choices)
@@ -376,6 +434,7 @@ def update_bookmark_tags(
     bookmark_id: int,
     tags: str = Form(""),
     tag_choices: list[str] = Form([]),
+    duplicate: bool = False,
     session: Session = Depends(get_session),
 ):
     bookmark = session.get(Bookmark, bookmark_id)
@@ -388,7 +447,8 @@ def update_bookmark_tags(
     session.commit()
     remove_orphan_tags(session)
     session.commit()
-    return RedirectResponse("/?message=收藏成功#library", status_code=303)
+    message = "标签已更新" if duplicate else "收藏成功"
+    return RedirectResponse(f"/?message={quote_plus(message)}#library", status_code=303)
 
 
 @app.post("/bookmarks/{bookmark_id}/discard")
@@ -412,12 +472,36 @@ def discard_bookmark_draft(
 )
 def api_create_bookmark(
     payload: BookmarkCreateRequest,
+    response: Response,
     session: Session = Depends(get_session),
 ):
     try:
+        normalized_url = validate_url(payload.url)
+        duplicate = find_active_bookmark_by_url(session, normalized_url)
+        if duplicate is not None:
+            existing_tags = [tag.name for tag in duplicate.tags]
+            assign_tags(
+                session,
+                duplicate,
+                ",".join([*existing_tags, *payload.tags]),
+            )
+            duplicate.updated_at = datetime.now(timezone.utc)
+            session.add(duplicate)
+            session.commit()
+            session.refresh(duplicate)
+            response.status_code = status.HTTP_200_OK
+            return BookmarkResponse(
+                id=duplicate.id,
+                url=duplicate.url,
+                title=duplicate.title,
+                tags=[tag.name for tag in duplicate.tags],
+                status=duplicate.status,
+                error_message=duplicate.error_message,
+                duplicate=True,
+            )
         bookmark = create_bookmark_record(
             session,
-            payload.url,
+            normalized_url,
             ",".join(payload.tags),
             title_hint=payload.title,
         )
@@ -430,6 +514,7 @@ def api_create_bookmark(
         tags=[tag.name for tag in bookmark.tags],
         status=bookmark.status,
         error_message=bookmark.error_message,
+        duplicate=False,
     )
 
 

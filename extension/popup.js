@@ -88,9 +88,14 @@ form.addEventListener("submit", async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "保存失败");
-    const suffix = result.status === "success" ? "正文已提取。" : "网址已保存，正文可稍后重试。";
-    showStatus(`已保存：${result.title} ${suffix}`, "success");
-    saveButton.querySelector("span").textContent = "保存成功";
+    if (result.duplicate) {
+      showStatus(`该网址已收藏过，已合并所选标签：${result.title}`, "success");
+      saveButton.querySelector("span").textContent = "标签已更新";
+    } else {
+      const suffix = result.status === "success" ? "正文已提取。" : "网址已保存，正文可稍后重试。";
+      showStatus(`已保存：${result.title} ${suffix}`, "success");
+      saveButton.querySelector("span").textContent = "保存成功";
+    }
   } catch (error) {
     showStatus(error.message || "保存失败，请检查本地服务。", "error");
   } finally {

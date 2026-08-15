@@ -10,6 +10,7 @@ BASE_URL = "http://127.0.0.1:8765"
 SCREENSHOT = Path("/tmp/url-bookmark-home.png")
 TAG_MENU_SCREENSHOT = Path("/tmp/url-bookmark-tags-open.png")
 TRASH_SCREENSHOT = Path("/tmp/url-bookmark-trash.png")
+DUPLICATE_SCREENSHOT = Path("/tmp/url-bookmark-duplicate.png")
 TEST_URL = f"https://example.invalid/article?browser-test={uuid4().hex}"
 
 
@@ -57,6 +58,22 @@ with sync_playwright() as playwright:
     )
     assert test_card.count() == 1
     assert test_card.get_by_role("link", name="Browser Test", exact=True).is_visible()
+
+    # Re-entering the same URL does not fetch or create another bookmark.
+    page.locator("#url").fill(f"{TEST_URL}#already-saved")
+    page.get_by_role("button", name="抓取").click()
+    page.wait_for_load_state("networkidle")
+    assert "该网址已收藏过，可以修改标签" in page.locator(".notice.success").inner_text()
+    assert page.get_by_role("button", name="保存标签").is_visible()
+    page.locator("#capture [data-tag-trigger]").click()
+    assert page.get_by_role("checkbox", name="Browser Test").is_checked()
+    page.screenshot(path=str(DUPLICATE_SCREENSHOT), full_page=True)
+    page.locator("#capture .tag-menu-option").filter(has_text="学习").click()
+    page.locator("#capture").get_by_role("button", name="完成").click()
+    page.get_by_role("button", name="保存标签").click()
+    page.wait_for_load_state("networkidle")
+    assert "标签已更新" in page.locator(".notice.success").inner_text()
+    assert page.locator(f'a[href="{TEST_URL}"]').count() == 1
 
     # Search filters while typing without a separate submit click.
     search = page.get_by_role("textbox", name="搜索收藏")
@@ -145,6 +162,7 @@ with sync_playwright() as playwright:
     assert not browser_errors, browser_errors
     print(
         "Browser smoke test passed; screenshots: "
-        f"{SCREENSHOT}, {TAG_MENU_SCREENSHOT}, {TRASH_SCREENSHOT}"
+        f"{SCREENSHOT}, {TAG_MENU_SCREENSHOT}, {TRASH_SCREENSHOT}, "
+        f"{DUPLICATE_SCREENSHOT}"
     )
     browser.close()

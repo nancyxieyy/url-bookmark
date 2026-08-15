@@ -1,6 +1,7 @@
 from collections.abc import Generator
 import base64
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
@@ -9,7 +10,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 import app.database as database_module
 from app.database import get_database_url, get_session
 from app.database import normalize_database_url
-from app.main import app
+from app.main import app, url_identity
 from app.models import Bookmark
 from app.schemas import ExtractionResult
 from app.services.tag_recommender import TagSuggestions
@@ -20,6 +21,16 @@ def test_normalize_database_url_for_supabase():
         "postgresql+psycopg://user:pass@host/db"
     )
     assert normalize_database_url("sqlite:///data/test.db") == "sqlite:///data/test.db"
+
+
+def test_url_identity_ignores_fragment_host_case_and_default_port():
+    assert url_identity("https://EXAMPLE.com:443/article#section") == (
+        url_identity("https://example.com/article")
+    )
+    assert url_identity("https://example.com") == url_identity("https://example.com/")
+    assert url_identity("https://example.com/article?a=1") != url_identity(
+        "https://example.com/article?a=2"
+    )
 
 
 def test_build_supabase_url_from_separate_password(monkeypatch):
@@ -115,6 +126,36 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                 assert session.get(Bookmark, bookmark_id).is_draft is False
             search = client.get("/?q=Searchable&tag=AI")
             assert "Test article" in search.text
+
+            def unexpected_extract(_: str):
+                raise AssertionError("duplicate URL must not be fetched again")
+
+            monkeypatch.setattr("app.main.extract_page", unexpected_extract)
+            duplicate = client.post(
+                "/bookmarks/preview",
+                data={"url": "https://EXAMPLE.com:443/article#section"},
+                follow_redirects=False,
+            )
+            assert duplicate.status_code == 303
+            assert f"duplicate_for={bookmark_id}" in duplicate.headers["location"]
+            duplicate_page = client.get(f"/?duplicate_for={bookmark_id}")
+            assert "该网址已收藏过，可以修改标签" in duplicate_page.text
+            assert "保存标签" in duplicate_page.text
+            with Session(engine) as session:
+                assert len(session.exec(select(Bookmark)).all()) == 1
+
+            updated_duplicate_tags = client.post(
+                f"/bookmarks/{bookmark_id}/tags?duplicate=1",
+                data={"tag_choices": ["AI", "Python"]},
+                follow_redirects=False,
+            )
+            assert "标签已更新" in unquote(
+                updated_duplicate_tags.headers["location"]
+            )
+            monkeypatch.setattr(
+                "app.main.extract_page",
+                lambda url: ExtractionResult("Test article", "# Body\n\nSearchable text"),
+            )
 
             monkeypatch.setattr(
                 "app.main.recommend_tags",
@@ -222,10 +263,24 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert api_response.status_code == 201
             assert api_response.json()["title"] == "Test article"
             assert api_response.json()["tags"] == ["Inbox", "Extension"]
+            assert api_response.json()["duplicate"] is False
+
+            duplicate_api = client.post(
+                "/api/bookmarks",
+                json={
+                    "url": "https://EXAMPLE.com:443/from-extension#same-page",
+                    "title": "Duplicate browser tab",
+                    "tags": ["New tag"],
+                },
+            )
+            assert duplicate_api.status_code == 200
+            assert duplicate_api.json()["id"] == api_response.json()["id"]
+            assert duplicate_api.json()["duplicate"] is True
+            assert duplicate_api.json()["tags"] == ["Inbox", "Extension", "New tag"]
 
             tags_response = client.get("/api/tags")
             assert tags_response.status_code == 200
-            assert tags_response.json() == ["Extension", "Inbox"]
+            assert tags_response.json() == ["Extension", "Inbox", "New tag"]
 
             cors_response = client.options(
                 "/api/bookmarks",
