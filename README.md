@@ -1,287 +1,356 @@
-# URL Bookmark
+<div align="center">
 
-这是一个网址收藏夹作业。Web 端用于搜索和整理收藏，轻量浏览器扩展用于在浏览网页时快速采集。后端会自动读取标题、提取主要正文并保存为 Markdown；本地使用 SQLite，线上使用 Supabase PostgreSQL 持久化收藏、标签和正文。
+# 🔖 URL Bookmark
 
-这个项目最重要的产品规则是：**抓取失败不等于收藏失败。**
+**保存的不只是一串 URL，而是当时真正值得留下的网页内容。**
 
-## 功能
+一个支持 **Web 管理 + Chrome / Edge 浏览器采集** 的个人网页收藏与轻量归档工具。
 
-- 粘贴 URL，自动提取标题和正文
-- 使用 Trafilatura 识别主要内容并转换为 Markdown
-- 新增、查看、编辑收藏，并在首页将收藏移入回收站
-- 回收站保留删除内容 30 天，支持恢复和立即彻底删除
-- 抓取前检测重复 URL；已收藏的网址直接带出现有标签供修改
-- 为一个收藏添加多个标签，并按标签筛选
-- 抓取成功后使用 LLM 推荐标签，由用户确认后再保存
-- 为收藏添加可选备注，并可在详情页新增、修改或删除
-- 在详情页按网页格式渲染 Markdown，而不是显示原始标记
-- 输入关键词或选择标签时即时筛选，不需要额外点击“搜索”
-- 自动识别知乎、小红书、YouTube、Reddit 等来源平台；未知站点归入“其他”
-- 平台、平台内标签和关键词可以组合筛选，并支持加入时间、最近修改及平台正/倒序排列
-- 收藏支持卡片与紧凑列表两种排版，整张收藏卡片都可进入详情
-- 使用 `success`、`fetch_failed`、`extract_failed` 记录抓取状态
-- 抓取失败时保留网址，之后可以手动重新抓取
-- 使用 SQLite 在本地持久化数据
-- 通过 Chrome/Edge 扩展抓取当前页面、确认推荐标签和备注，并显示最近三条收藏
-- 使用快捷键直接把当前页面保存到 `Inbox`
-- 使用独立的 Extension API Token 连接插件；数据库只保存 Token hash
-- 使用有序、可重复执行的 schema migration 升级 SQLite/PostgreSQL
+[简体中文](./README.md) | [English](./README.en.md)
 
-## 设计说明
+[Online Demo](https://url-bookmark.onrender.com) | [AI 协作记录](./AI_NOTES.md)
 
-我把 Bookmark 作为核心实体，把 Markdown 正文作为收藏之后生成的增强内容。这样设计是因为，用户最核心的需求是先把网址保存下来，而正文抓取可能因为网络、反爬、登录墙或页面结构等原因失败。如果把“抓取成功”作为“收藏成功”的前提，用户反而可能因为一次临时错误丢掉原本想保存的网址。
+</div>
 
-因此，应用把“收藏”和“抓取”分开处理。URL 格式合法且不指向受保护的本地网络时，会创建 Bookmark 并记录抓取状态：
+---
 
-- 抓取成功：保存标题和 Markdown，状态为 `success`。
-- 网页无法访问：仍保存网址，状态为 `fetch_failed`。
-- 网页可以访问但无法识别正文：仍保存网址，状态为 `extract_failed`。
-- 重新抓取失败：保留之前成功保存的标题和正文，只更新状态和错误原因。
+## 项目简介
 
-技术上选择 FastAPI + Jinja2，是因为本项目重点是数据处理和抓取流程，不需要复杂的前端状态管理。SQLModel 用于描述 Bookmark、Tag 和它们的多对多关系；数据保存在 `data/bookmarks.db`，SQLite 不需要额外安装数据库服务，适合本地作业演示。
+URL Bookmark 最初来自一个简单需求：粘贴网址，保存标题和正文，以后还能通过标签和搜索重新找到它。
 
-正文提取使用 Trafilatura，而不是直接对 HTML 调用 `get_text()`。后者通常会把导航栏、菜单、页脚和 Cookie 提示等非正文内容一起保存，而 Trafilatura 会先判断网页的主要内容区域，再输出 Markdown。
+真实使用中很快会遇到更多问题：有些网站拒绝服务器请求，JavaScript 动态页面返回的 HTML 中没有正文，登录后内容对用户可见但服务器看不到；即使正文抓取失败，用户仍然希望先保存这个网址。
 
-Web 端采用“抓取 → 确认标签 → 收藏”的两阶段交互。第一次只抓取并生成临时草稿，随后仍在首页原表单中显示标签下拉；AI 推荐也直接放在这个下拉菜单里，不再额外占用一块页面。用户点击“收藏”后草稿才进入“我的收藏”。放弃的草稿会在 24 小时后自动清理。
-
-抓取前会先检查活动收藏中是否已有同一 URL。比较时忽略 `#fragment`、域名大小写和 HTTP/HTTPS 默认端口，但保留路径与查询参数。命中重复项时不会再次抓网页或调用模型，而是显示“该网址已收藏过”，并在原标签下拉中带出现有标签供修改。回收站里的记录不阻止重新收藏。扩展接口同样不会创建重复记录，而会合并本次选择的标签。
-
-Bookmark 会根据 URL 域名记录来源平台。已知平台使用统一名称，无法识别的独立网站归为“其他”；旧数据会在启动迁移时自动补齐。平台筛选先确定收藏范围，标签下拉随后只显示该平台中实际使用过的标签，因此可以继续叠加关键词和标签条件。修改标题、网址、标签或备注都会更新 `updated_at`，供“最近修改”排序使用。
-
-正文抓取成功后，后端会把标题、已有标签列表和 Markdown 前 4,000 字发送给 LLM。推荐结果不会自动写入数据库；用户点击建议并最终收藏后才会入库。服务端会再次校验模型输出，总推荐数最多 5 个，其中新标签最多 2 个。这个功能遵循：
-
-> AI 提建议，人维护自己的分类体系。
-
-抓取链路如下：
+因此，项目最终形成三个明确职责：
 
 ```text
-输入 URL → URL 与网络目标校验 → 平台元数据回退 / 通用 HTTP 请求
-         → 标题与页面简介 → 正文识别 → Markdown → Bookmark + Tags + Note
+Extension = Capture
+Web       = Organize
+Backend   = Store + Extract
 ```
 
-URL 抓取设置了请求超时、最多 5 次重定向和 5 MB 响应限制。每次重定向后都会重新检查目标地址，避免跳转到 localhost 或私网地址。针对本地代理常用的 `198.18.0.0/15` Fake-IP，只允许域名解析结果使用该网段，直接输入该 IP 仍会被拒绝。
+> **Bookmark 是核心实体，Markdown 是增强内容。抓取失败不等于收藏失败。**
 
-为缩短等待时间，普通网页只执行一次首次网络目标校验，跳转后仍会逐次重新校验；HTTP 抓取最多等待 8 秒，AI 推荐最多等待 10 秒。重复 URL 会先利用 URL 索引精确匹配，只有大小写、默认端口或片段不同的情况才进入兼容比较。
+## 核心功能
 
-在功能范围上，我主动放弃了 React、账号体系、向量搜索、LLM 摘要和基于 Playwright 的动态网页抓取。这些功能不属于题目要求的核心链路，而且会增加实现和运行复杂度。LLM 只用于低风险的标签建议，不负责自动分类。当前优先保证的是：
+### 网页收藏
 
-> 收藏 → 正文提取 → Markdown 保存 → 标签整理 → 搜索找回
+- Web 端粘贴 URL 即可抓取；
+- 自动获取标题，提取正文并保存为 Markdown；
+- 用 `success`、`fetch_failed` 和 `extract_failed` 记录抓取状态；
+- 抓取失败时仍保存 URL、标题、标签和备注；
+- 支持重新抓取；
+- 重复 URL 检测，命中后复用现有记录并允许修改标签和备注。
 
-删除使用软删除：Bookmark 会记录 `deleted_at`，不再出现在“我的收藏”和搜索结果中，但会在回收站保留 30 天。用户可以撤销删除，也可以主动彻底删除；超过 30 天的记录会在下一次访问首页或回收站时自动清理。这样既避免卡片上的误操作直接造成数据丢失，也不需要为这个作业额外维护定时任务。
+### 浏览器扩展
 
-数据库升级由 `schema_migrations` 记录版本。新数据库会初始化核心表并依次执行全部 migration；旧数据库只执行尚未应用的版本。每个 migration 和对应版本记录位于同一个事务中，失败时不会错误推进版本号。早期通过启动时字段检测补充的 `deleted_at`、`is_draft`、`notes` 和 `platform` 已纳入兼容 migration，已有数据不会被重新创建或删除。
+Chrome / Edge Manifest V3 扩展支持：
 
-在完成题目要求的 Web 管理端后，我额外实现了一个轻量浏览器扩展作为收藏入口。实际使用时，收藏意图通常发生在用户正在浏览目标网页的时候；“复制网址 → 打开收藏页面 → 粘贴网址”的操作链路偏长。因此扩展只负责采集，搜索、编辑、正文查看和重新抓取仍然留在 Web 端，避免维护两套完整界面。
+- 打开弹窗后自动读取当前页面；
+- `activeTab + scripting` 按需注入提取脚本；
+- 从已渲染 DOM 中提取动态或登录后内容；
+- Readability 识别正文，Turndown 转换 Markdown；
+- 无正文时仍可只保存 URL；
+- 多选标签、新建标签和可选备注；
+- 弹窗显示最近三条收藏，可打开详情或移入回收站；
+- `Cmd/Ctrl + Shift + S` 快速保存到 `Inbox`。
 
-Web页面继续使用Basic Auth。插件使用独立Bearer Token，只能调用创建收藏、检查重复、读取标签和最近收藏、生成标签建议及把单条收藏移入回收站所需的API。Token原文只在生成或重新生成时显示一次，数据库只保存SHA-256 hash；重新生成后旧Token立即失效。插件不能使用这个Token打开设置、永久删除或执行Web管理操作。
+### 标签与 AI 推荐
+
+- 复用已有标签，也可在多选菜单第一行新建标签；
+- DeepSeek 基于标题和 Markdown 生成推荐；
+- 优先匹配已有标签，只建议少量新标签；
+- 推荐不会自动成为正式标签，需要用户点击选中；
+- AI 服务失败不会阻断收藏。
+
+Web 和扩展会在正文提取成功后自动请求推荐，结果只显示在标签下拉菜单中。这意味着扩展提取的标题和 Markdown 片段会自动发送给后端标签推荐服务，但在用户点击“收藏”前不会写入 Bookmark。
+
+### 搜索、整理与删除
+
+- 按标题、URL 和 Markdown 正文搜索；
+- 输入时防抖实时筛选，无需再点搜索；
+- 按标签和来源平台组合筛选；
+- 按加入时间、最近修改、平台 A→Z / Z→A 排序；
+- 卡片 / 列表视图切换；
+- 安全渲染 Markdown 详情，支持备注维护；
+- 首页软删除和二次确认；
+- 30 天回收站，支持恢复和彻底删除。
+
+## 两种正文采集方式
+
+### 1. Server Capture
+
+Web 端默认使用：
 
 ```text
-插件 = Capture
-网页 = Organize
-后端 = Store + Extract
+URL → 安全校验 → httpx → Trafilatura → Markdown → Database
 ```
 
-## 技术结构
+适合博客、文档、新闻文章和普通公开 HTML 页面。提取器先使用偏精确模式，无结果时改用偏召回模式，再失败则回退到页面简介或仅保存 URL。
+
+### 2. Browser Capture
+
+扩展读取用户当前已渲染的 DOM：
 
 ```text
-浏览器 / Jinja2 页面
-        ↓
-FastAPI 路由与产品规则
-        ├── SQLModel → SQLite（Bookmark / Tag）
-        ├── Extractor → httpx → Trafilatura → Markdown
-        └── Tag Recommender → DeepSeek API → 用户确认
+当前 DOM → Clone + 敏感节点清理 → 平台适配 / Readability
+         → Turndown → Markdown → FastAPI
 ```
+
+两种来源由 `capture_method = server | browser` 明确区分。Browser Markdown 存在时，后端直接保存，绝不再调用 Trafilatura 覆盖它；没有正文时仍会创建 `extract_failed` Bookmark。
+
+## 平台适配
+
+普通页面使用 Readability。针对非标准文章型页面，当前还提供轻量适配：
+
+- **小红书**：标题、作者、笔记正文和最多 9 张图片；
+- **YouTube**：标题、频道、简介、封面和原始观看链接；
+- **Reddit**：标题、作者、Subreddit、正文和帖子图片。
 
 ```text
-当前网页 → Chrome / Edge Extension → FastAPI JSON API
-                                      ├── SQLite
-                                      └── Trafilatura → Markdown
+Platform Adapter → Readability → URL-only Fallback
 ```
 
-```text
-app/
-├── main.py                 # 页面路由与应用规则
-├── models.py               # Bookmark / Tag 数据模型
-├── database.py             # SQLite / PostgreSQL 连接与轻量迁移
-├── migrations.py           # 有序 schema migration 与版本记录
-├── auth.py                 # Web Basic Auth 与 Extension Bearer Token
-├── schemas.py              # 抓取结果类型
-├── services/extractor.py   # URL 校验、HTTP 获取与正文提取
-├── services/tag_recommender.py # AI 标签推荐与输出校验
-├── templates/              # Jinja2 页面
-└── static/style.css        # 页面样式
-tests/                      # 自动化测试与浏览器验收脚本
-extension/                  # Chrome / Edge 扩展
-data/                       # 本地数据库目录
-AI_NOTES.md                 # 更详细的 AI 协作记录
-```
+YouTube 服务器抓取优先使用公开 oEmbed 元数据，避免直接访问 watch 页时常见的 HTTP 429。项目不下载视频；图片也只作为远程 URL 写入 Markdown，不是完整网页快照。
 
-## 安装与启动
+## AI 标签推荐
 
-推荐使用 Python 3.11 或更高版本。
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-打开 <http://127.0.0.1:8000>。
-
-数据库会在第一次启动时自动创建在 `data/bookmarks.db`。该文件已加入 `.gitignore`，因此不会把本地收藏提交到仓库。
-
-## 免费部署：Render + Supabase
-
-线上部署使用 Render Free Web Service 运行 FastAPI，使用 Supabase PostgreSQL 持久化数据。本地开发仍默认使用 SQLite，不需要配置 Supabase。
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/nancyxieyy/url-bookmark)
-
-部署时 Render 会根据 `render.yaml` 要求填写三个 Secret：
-
-- `DATABASE_URL`：Supabase Dashboard 的 **Connect → Session pooler** PostgreSQL 连接串。建议使用 Session pooler，保留连接串中的 `sslmode=require`，不要提交到 GitHub。
-- `APP_PASSWORD`：网页版访问密码，建议使用至少 16 位随机密码。
-- `DEEPSEEK_API_KEY`：用于生成 AI 标签推荐；未配置时只有推荐功能不可用，收藏和正文抓取不受影响。
-
-`DEEPSEEK_MODEL` 默认使用 `deepseek-v4-flash`。本地开发可以直接打开项目根目录中已被 `.gitignore` 排除的 `.env`，在 `DEEPSEEK_API_KEY=` 后填入密钥。
-
-`APP_USERNAME` 默认为 `admin`。部署完成后，浏览器访问 Render 提供的固定 `*.onrender.com` 地址时会显示 HTTP Basic Auth 登录框。
-
-首次部署或这次升级完成后：
-
-1. 使用 Basic Auth 登录网页版。
-2. 打开右上角 **设置**。
-3. 点击 **生成 Token**。
-4. 立即复制一次性显示的完整 Token。
-5. 打开浏览器扩展设置，填写 Server URL 和 API Token。
-
-数据库中不会保存可重新查看的Token明文；如果遗失，请在设置页重新生成，并同步更新扩展。重新生成会立即使旧Token失效。
-
-部署配置会执行：
-
-```text
-Build: pip install -r requirements.txt
-Start: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-Health check: GET /health
-```
-
-应用会自动识别标准 `postgresql://` / `postgres://` 连接串并使用 psycopg 3。本地没有 `DATABASE_URL` 时继续使用 `data/bookmarks.db`。
-
-## 安装浏览器扩展
-
-扩展默认连接已经部署的 `https://url-bookmark.onrender.com`，不需要在本机启动 FastAPI。
-
-Chrome：
-
-1. 打开 `chrome://extensions`。
-2. 开启右上角“开发者模式”。
-3. 点击“加载已解压的扩展程序”。
-4. 选择项目中的 `extension` 目录。
-5. 打开扩展的“详细信息 → 扩展程序选项”。
-6. Server URL 默认是 `https://url-bookmark.onrender.com`；粘贴网页版设置中生成的API Token并保存。
-
-Edge 的步骤相同，扩展管理地址为 `edge://extensions`。
-
-扩展提供两条路径：
-
-- **精细保存**：点击扩展图标后立即自动抓取当前页面；抓取结果出现后，在与 Web 端一致的多选下拉中勾选 AI 推荐或已有标签，也可以从下拉第一行添加一个新标签，再填写可选备注并收藏。
-- **快速保存**：按 `Cmd/Ctrl + Shift + S`，直接把当前页面保存到 `Inbox`。如果快捷键和浏览器已有功能冲突，可以在 `chrome://extensions/shortcuts` 中修改。
-
-弹窗底部显示最近三条收藏。标题可直接打开网页版详情，也可以在弹窗内把收藏移入回收站。
-
-扩展只向后端发送当前页面的 URL、浏览器标题、标签和备注。正文抓取与 AI 标签推荐仍由 FastAPI 完成。每个插件API请求都必须带有 `Authorization: Bearer <token>`。对应接口为：
-
-```http
-GET /api/tags
-GET /api/bookmarks/recent
-POST /api/bookmarks/preview
-POST /api/bookmarks/{id}/confirm
-POST /api/bookmarks/{id}/delete
-POST /api/bookmarks
-POST /api/bookmarks/{id}/tag-suggestions
-```
+模型输入为网页标题、已有标签列表和 Markdown 前 4,000 字符，并必须返回结构化 JSON：
 
 ```json
 {
-  "url": "https://example.com/article",
-  "title": "Article title",
-  "tags": ["AI", "Reading"],
-  "notes": "之后精读"
+  "existing_tags": ["Python", "AI"],
+  "new_tags": ["FastAPI"]
 }
 ```
 
-## 测试与验证
+服务端会再次去重和限制长度：总推荐最多 5 个，新标签最多 2 个，优先复用已有标签。模型输出只是候选，不会直接改变用户的分类体系。
 
-运行自动化测试：
+## Architecture
+
+```mermaid
+flowchart LR
+    A["Web 管理端"] -->|Basic Auth| B["FastAPI"]
+    C["Chrome / Edge Extension"] -->|Bearer Token| B
+    B --> D["SQLite / PostgreSQL"]
+    B --> E["Trafilatura"]
+    B --> F["DeepSeek Tag Recommender"]
+    C --> G["Current Page DOM"]
+    G --> H["Readability / Platform Adapter"]
+    H --> I["Turndown → Markdown"]
+    I --> B
+```
+
+| 领域 | 技术 |
+| --- | --- |
+| Backend | Python, FastAPI, SQLModel, Jinja2 |
+| Storage | SQLite（本地）、PostgreSQL / Supabase（部署） |
+| Server Extraction | httpx, Trafilatura |
+| Browser Extraction | Mozilla Readability, Turndown |
+| Markdown | markdown-it-py（禁用原始 HTML） |
+| Extension | Chrome Manifest V3 |
+| AI | DeepSeek API |
+| Deployment | GitHub → Render, Supabase PostgreSQL |
+
+## 安全与隐私
+
+### SSRF 防护
+
+- 只允许 HTTP / HTTPS，拒绝 URL 中的用户名和密码；
+- 拦截 localhost、私有 IP、loopback、link-local 和 reserved 地址；
+- DNS 解析后检查目标 IP，每次重定向后重新校验；
+- 最多 5 次重定向、8 秒超时、5 MB 响应体，拒绝非 HTML 内容；
+- 允许公开域名在本地代理下解析到 `198.18.0.0/15` Fake-IP，但拒绝直接输入该 IP。
+
+### Browser Capture 隐私边界
+
+扩展先 clone 当前 DOM，再从副本中删除 `script`、`style`、`form`、`input`、`textarea`、`select`、`button`、`contenteditable`、`iframe`、`video` 和 `audio` 等节点，不修改真实页面。
+
+扩展不读取 Cookie、localStorage、sessionStorage、密码、表单值、Authorization 或浏览历史。Manifest 使用 `activeTab + scripting`，不申请永久 `<all_urls>` 页面读取权限。
+
+### Web / Extension 认证分离
+
+```text
+Web       → Basic Auth
+Extension → Bearer Token
+```
+
+扩展不保存 Web 主密码。Token 明文只在生成时显示一次，数据库只保存 SHA-256 Hash；重新生成会立即使旧 Token 失效。
+
+## 数据持久化与 Migration
+
+本地默认使用 `data/bookmarks.db` SQLite，部署环境使用 PostgreSQL / Supabase，使数据与 Render 应用实例分离。
+
+项目使用轻量版本化 `schema_migrations`：每个 migration 有独立版本号，按顺序且只执行一次，DDL 和版本记录在事务中执行，同时兼容 SQLite 和 PostgreSQL。当前是单用户、单实例应用，因此没有为了工具完整性强行引入 Alembic。
+
+## 项目结构
+
+```text
+.
+├── app/
+│   ├── main.py / models.py / schemas.py
+│   ├── database.py / migrations.py / auth.py
+│   ├── services/
+│   ├── templates/
+│   └── static/
+├── extension/
+│   ├── manifest.json
+│   ├── popup.html / popup.js / capture.js
+│   ├── background.js / options.html / options.js
+│   └── vendor/
+├── tests/
+├── data/
+├── AI_NOTES.md
+├── README.md
+└── README.en.md
+```
+
+## Quick Start
+
+推荐 Python 3.11+。
+
+```bash
+git clone https://github.com/nancyxieyy/url-bookmark.git
+cd url-bookmark
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload
+```
+
+Windows 启用虚拟环境：
+
+```powershell
+.venv\Scripts\activate
+```
+
+访问 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
+
+### 环境变量
+
+```env
+# 可选：不配置则 Web 不启用 Basic Auth
+APP_USERNAME=admin
+APP_PASSWORD=replace-with-a-long-random-password
+
+# 可选：不配置则仅禁用 AI 推荐
+DEEPSEEK_API_KEY=replace-with-a-deepseek-api-key
+DEEPSEEK_MODEL=deepseek-v4-flash
+
+# 可选：留空则使用 SQLite
+DATABASE_URL=
+```
+
+## 安装浏览器扩展
+
+1. 打开 `chrome://extensions` 或 `edge://extensions`。
+2. 开启“开发者模式”，点击“加载已解压的扩展程序”。
+3. 选择项目中的 `extension/` 目录。
+4. 登录 Web 管理端，在右上角“设置”生成 Extension API Token，并立即复制。
+5. 打开扩展“设置”，填写 Server URL 和 API Token。
+6. 打开任意 HTTP/HTTPS 网页，点击扩展图标即会自动采集。
+
+扩展默认连接 `https://url-bookmark.onrender.com`。如改用其他服务器，保存设置时会请求该具体 origin 的访问权限。
+
+## 部署
+
+`render.yaml` 定义了 Render Web Service：
+
+```text
+Build:  pip install -r requirements.txt
+Start:  uvicorn app.main:app --host 0.0.0.0 --port $PORT
+Health: GET /health
+```
+
+推送到 GitHub 绑定分支后，Render 会自动构建和部署。生产数据库使用 Supabase PostgreSQL，密钥和连接串应只保存在 Render Environment Variables 中。
+
+## Tests
 
 ```bash
 pytest -q
 ```
 
-测试覆盖：
+当前验收记录：
 
-- 无效协议和本机地址拦截
-- 代理 Fake-IP 域名兼容与直接 Fake-IP 拦截
-- 正文提取成功、YouTube 元数据回退和网页访问失败
-- 抓取草稿、重复 URL 检测、备注、Markdown 安全渲染、首页下拉标签确认、即时搜索、平台与标签组合筛选、排序和编辑
-- 卡片/列表切换、整张卡片进入详情和详情操作按钮布局
-- 首页删除确认、回收站、撤销删除、彻底删除和 30 天自动清理
-- 扩展两阶段收藏、AI 推荐、备注、最近三条、删除、JSON API 和扩展来源 CORS
-- AI 推荐输出清洗、已有标签优先、数量限制和失败降级
-- 新/旧SQLite数据库的版本化migration、幂等执行和失败回滚
-- Extension Token生成、hash存储、重新生成失效、API权限边界和Authorization CORS
-- 扩展设置持久化、动态Server URL、Bearer请求及401明确提示
+```text
+29 passed
+```
 
-外部网页请求在自动化测试中使用 mock，避免把网络波动误判成代码错误。
+覆盖 Bookmark CRUD、抓取成功/失败、URL 安全校验、SSRF、Markdown 渲染、标签、AI 输出清洗、重复检测、回收站、平台识别、Migration、Basic/Bearer 认证、Browser Capture 分流和 Extension Manifest。
 
-项目还包含实际运行过的浏览器验收脚本 `tests/browser_smoke.py`。它验证首页渲染、安全提示、抓取失败仍保存、标签、详情、编辑、首页删除确认、回收站恢复、彻底删除和浏览器控制台错误。`tests/ai_tag_browser_smoke.py` 另行验证 AI 推荐、点选和保存都在首页完成。运行方式：
+真实 Chromium 验收：
 
 ```bash
 python -m pip install -r requirements-dev.txt
 playwright install chromium
 uvicorn app.main:app --port 8765
-```
 
-保持服务运行，在另一个终端执行：
-
-```bash
-source .venv/bin/activate
+# 另一个终端
 python tests/browser_smoke.py
 python tests/ai_tag_browser_smoke.py
-```
-
-保持后端运行时，还可以让 Chromium 真正加载未打包扩展并检查 service worker、popup、标签 API 和页面运行错误：
-
-```bash
 python tests/extension_smoke.py
 ```
 
-## AI 使用说明
+Smoke tests 包括 Web 交互、AI 推荐、未打包扩展、普通文章、JS 渲染页面、URL-only 回退、Token 失效、AI 失败降级以及小红书 / YouTube / Reddit 采集。
 
-开发过程中我主要使用 ChatGPT 和 Codex。
+## 关键设计演进
 
-ChatGPT 用于前期需求拆解和方案讨论，例如确定 Bookmark 与正文抓取是否应该绑定、异常状态如何划分、哪些功能属于本次 MVP，以及哪些功能应该主动放弃。
+| 最初方案 | 问题 | 当前方案 | 改进 |
+| --- | --- | --- | --- |
+| 抓取失败则收藏失败 | 外部网站不稳定会让 URL 丢失 | Bookmark 与 Markdown 分离 | 核心收藏链路更可靠 |
+| 输入 URL 后跳转编辑页 | 操作被打断 | 首页草稿抓取后原地确认 | 采集、标签和收藏连成一条流程 |
+| 只有服务器抓取 | 登录后和 JS 页面抓不到 | Browser DOM Capture | 保存用户实际看到的正文 |
+| Browser Markdown 再走服务器抓取 | 可能用空页覆盖正确内容 | `capture_method` 明确分流 | 正文来源稳定可追踪 |
+| 全部使用 Readability | 媒体平台不是标准文章 | 轻量平台适配 + 通用回退 | 改善小红书、YouTube、Reddit 效果 |
+| YouTube 直接下载 watch 页 | 云端常见 HTTP 429 | oEmbed / 浏览器元数据 | 更稳定且不伪装成文章 |
+| 逗号分隔手输标签 | 重复、拼写不一致 | 多选下拉 + 第一行新建 | Web 和扩展交互统一 |
+| AI 独立模块和按钮 | 多一步且占用空间 | 自动生成并放进标签菜单 | 更少摩擦，仍由用户决定是否选中 |
+| 永久删除 | 易误删 | 30 天回收站 | 可恢复 |
+| 扩展保存 Web 密码 | 权限过大且难以撤销 | 独立 Bearer Token | 不暴露主密码 |
+| Render 上使用 SQLite | 实例重建可能丢数据 | Supabase PostgreSQL | 数据与部署生命周期分离 |
+| 启动时零散补字段 | 无法明确 Schema 版本 | `schema_migrations` | 升级顺序可验证、可重复 |
 
-Codex 用于具体实现，包括项目结构、SQLModel 数据模型、CRUD、标签、正文提取服务、搜索、异常处理、页面、测试和文档。我先确定功能列表和产品规则，再实现各模块；每完成一个阶段都会运行测试或实际启动应用，而不是只根据生成的代码判断功能是否完成。
+## AI Collaboration
 
-在 Web 端完成后，我重新从实际使用场景检查产品形态：产生收藏意图时，用户通常正在目标网页上，而不是已经打开收藏管理页。因此又把“采集”和“管理”拆开，增加了轻量扩展作为第二个客户端。扩展复用同一个后端和数据库，不在浏览器中重复实现正文提取。
+ChatGPT 主要用于需求拆解、产品规则、异常场景和 Scope 取舍；Codex 用于 FastAPI / SQLModel 实现、浏览器扩展、Migration、测试、Bug 修复和文档。
 
-AI 协作过程中出现过几个实际问题：
+```text
+定义问题 → 拆分任务 → AI 实现 → 真实运行 → 测试 → 根据结果修正
+```
 
-1. SQLModel 的关系类型在 Python 3.14 下被错误解析成 `list['Bookmark']`，导致应用第一次执行 CRUD 时 mapper 初始化失败。这个问题是在集成测试中发现的，最后通过调整注解方式解决。
-2. pytest 9 没有自动把项目根目录加入导入路径，第一轮测试无法导入 `app`。补充最小的 `pytest.ini` 后，测试才真正执行到业务代码。
-3. URL 安全校验最初把 `programmercarl.com` 拦截成内网地址。实际排查发现，本地代理把域名解析成了 `198.18.0.8`，这是代理使用的 Fake-IP。之后修改规则为：允许域名经代理解析到 Fake-IP 网段，但直接输入该 IP 仍然拒绝，并增加对应测试。
-4. 浏览器测试第一次运行时，一个文本选择器同时匹配了标签链接和筛选下拉项。页面功能本身正确，但验收脚本不够精确；收窄为具有明确角色的链接选择器后，完整流程通过。
+典型人工校正包括：将抓取失败与收藏失败分离，防止 Browser Markdown 被服务器覆盖，分离 Web Basic Auth 和 Extension Bearer Token，修正本地代理 Fake-IP 导致的公开网站误拦截，并将零散数据库字段补丁改为版本化 migration。更完整的决策与验证记录见 [AI_NOTES.md](./AI_NOTES.md)。
 
-这些问题说明，AI 生成代码后仍需要通过测试、真实运行和具体输入来校正。AI 主要用于加快实现和补充思路，产品规则、异常策略、功能取舍和最终验收仍由我判断。更详细的记录见 `AI_NOTES.md`。
+## 主动控制的范围
 
-## 已知限制
+项目没有为展示复杂度而加入 React、多用户账号、Redis、Celery、Elasticsearch、Vector Database、RAG、Knowledge Graph、AI Summary、云端 Playwright 抓取或付费墙绕过。当前优先保证：
 
-- 通用抓取不执行 JavaScript，因此高度依赖客户端渲染的页面可能只能保存标题、页面简介或原始链接。
-- YouTube 会优先使用公开视频元数据回退，避免服务器直接访问观看页时常见的 HTTP 429；这不会自动获取视频字幕或转录全文。
-- 登录墙、付费墙、验证码和严格反爬网站可能抓取失败。
-- 搜索使用 SQLite `LIKE`，没有分词、相关性排序或语义搜索。
-- AI 标签推荐依赖 `DEEPSEEK_API_KEY` 和外部模型服务；请求失败时不会影响收藏数据。
-- 标签名称目前区分大小写。
-- 这是单用户应用：Web和插件已有独立认证，但没有多账号、角色或跨用户共享。
-- Render 免费实例休眠后的第一次请求可能需要等待一段时间，扩展抓取也会受到这段冷启动时间影响。
+```text
+收藏 → 提取 → 保存 → 整理 → 重新找到
+```
+
+## Known Limitations
+
+1. 当前不是完整网页镜像，只保存 Markdown；
+2. 图片使用原站远程 URL，原图失效后可能无法显示；
+3. 不保存视频文件、字幕或自动转录；
+4. 平台 DOM 更新可能影响小红书、YouTube 和 Reddit 适配器；
+5. AI 标签依赖 DeepSeek API，不可用时回退为手动标签；
+6. 登录墙、付费墙和验证码不会被绕过；
+7. Render 免费实例休眠后，首次访问可能较慢；
+8. 草稿和回收站清理由访问触发，没有后台 Worker；
+9. 当前是单用户应用，没有多账号数据隔离；
+10. 快捷键保存到 Inbox 走 Server Capture，不执行 Popup 的 Browser Capture；
+11. 当前没有 Snapshot、图片归档、版本历史、向量搜索或失效链接监控。
+
+## Future Work
+
+- JSON / Netscape Bookmark HTML 导入导出；
+- 标签重命名和合并；
+- 分页与更可靠的 URL canonicalization；
+- Markdown 人工修正；
+- 网页快照、图片本地归档和内容版本历史；
+- 失效链接检测。
+
+## License
+
+This project was created as a take-home assignment and personal learning project. Add an explicit license before redistributing it as open source.
