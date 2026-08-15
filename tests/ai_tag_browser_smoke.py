@@ -23,6 +23,7 @@ with Session(engine) as session:
         title=test_title,
         markdown_content="# FastAPI\n\nBuild Python backend APIs with FastAPI.",
         status="success",
+        is_draft=True,
     )
     session.add(bookmark)
     session.commit()
@@ -47,10 +48,12 @@ try:
         page.on("pageerror", lambda error: browser_errors.append(str(error)))
         page.route("**/api/bookmarks/*/tag-suggestions", fulfill_suggestions)
 
-        page.goto(f"{BASE_URL}/?suggest_for={bookmark_id}#tag-confirmation")
+        page.goto(f"{BASE_URL}/?suggest_for={bookmark_id}#capture")
         page.wait_for_load_state("networkidle")
         assert page.url.startswith(f"{BASE_URL}/?suggest_for={bookmark_id}")
-        assert page.get_by_text("正文已抓取，在这里确认标签", exact=True).is_visible()
+        assert page.get_by_text("正文已抓取，可以确认标签并收藏", exact=False).is_visible()
+        capture = page.locator("#capture")
+        capture.locator("[data-tag-trigger]").click()
         assert page.get_by_text("优先匹配已有标签", exact=True).is_visible()
         assert page.get_by_text("建议的新标签", exact=True).is_visible()
         assert page.get_by_role("button", name="＋ 技术").is_visible()
@@ -61,16 +64,14 @@ try:
         assert page.get_by_role("button", name="✓ 技术").get_attribute("aria-pressed") == "true"
         assert page.get_by_role("button", name="✓ FastAPI").get_attribute("aria-pressed") == "true"
 
-        confirmation = page.locator("#tag-confirmation")
-        confirmation.locator("[data-tag-trigger]").click()
-        assert confirmation.get_by_role("checkbox", name="技术").is_checked()
-        assert confirmation.get_by_role("checkbox", name="FastAPI").is_checked()
-        confirmation.get_by_role("button", name="完成").click()
+        assert capture.get_by_role("checkbox", name="技术").is_checked()
+        assert capture.get_by_role("checkbox", name="FastAPI").is_checked()
         page.screenshot(path=str(SCREENSHOT), full_page=True)
+        capture.get_by_role("button", name="完成").click()
 
-        page.get_by_role("button", name="保存标签").click()
+        page.get_by_role("button", name="收藏").click()
         page.wait_for_load_state("networkidle")
-        assert page.url == f"{BASE_URL}/?message=%E6%A0%87%E7%AD%BE%E5%B7%B2%E4%BF%9D%E5%AD%98#library"
+        assert "suggest_for=" not in page.url
         saved_card = page.locator(".bookmark-card").filter(has_text=test_title)
         assert saved_card.get_by_text("FastAPI", exact=True).is_visible()
         assert saved_card.get_by_text("技术", exact=True).is_visible()

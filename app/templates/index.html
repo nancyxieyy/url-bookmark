@@ -6,61 +6,54 @@
     <h1>收藏一个网址，<br>留下它真正重要的内容。</h1>
     <p class="intro">自动提取标题和正文，保存为 Markdown。即使抓取失败，网址也不会丢。</p>
   </div>
-  <form class="capture-form" method="post" action="/bookmarks">
+  {% if preview_bookmark %}
+  <form class="capture-form preview" id="capture" method="post" action="/bookmarks/{{ preview_bookmark.id }}/tags">
     <label for="url">网页地址</label>
-    <input id="url" name="url" type="url" placeholder="https://example.com/article" required>
+    <input id="url" name="url" type="url" value="{{ preview_bookmark.url }}" readonly>
     {% set selector_id = "capture-tags" %}
+    {% set tag_choices = preview_tag_choices %}
+    {% set selected_tags = preview_selected_tags %}
+    {% if preview_bookmark.status == 'success' and preview_bookmark.markdown_content %}
+      {% set tag_recommender_endpoint = "/api/bookmarks/" ~ preview_bookmark.id ~ "/tag-suggestions" %}
+      {% set tag_recommender_auto = true %}
+    {% else %}
+      {% set tag_recommender_endpoint = none %}
+      {% set tag_recommender_auto = false %}
+    {% endif %}
     {% include "_tag_selector.html" %}
-    <button type="submit">收藏并抓取 <span>→</span></button>
-  </form>
-</section>
-
-{% if suggested_bookmark %}
-<section class="tag-confirmation" id="tag-confirmation">
-  <div class="tag-confirmation-copy">
-    <p class="eyebrow">AI TAG SUGGESTIONS</p>
-    <h2>正文已抓取，在这里确认标签</h2>
-    <p>{{ suggested_bookmark.title }}</p>
-  </div>
-  <form method="post" action="/bookmarks/{{ suggested_bookmark.id }}/tags">
-    {% set selector_id = "suggested-tags" %}
-    {% set tag_choices = suggested_tag_choices %}
-    {% set selected_tags = suggested_selected_tags %}
-    {% include "_tag_selector.html" %}
-    <section
-      class="tag-recommender"
-      data-tag-recommender
-      data-endpoint="/api/bookmarks/{{ suggested_bookmark.id }}/tag-suggestions"
-      data-auto-recommend="true"
-    >
-      <div class="tag-recommender-heading">
-        <div><strong>AI 推荐</strong><small>点击建议后才会加入</small></div>
-        <button class="button secondary compact" type="button" data-recommend-tags>重新生成</button>
-      </div>
-      <p class="tag-recommend-status" data-recommend-status>正在读取正文并整理标签…</p>
-      <div class="tag-recommend-results" data-recommend-results hidden></div>
-    </section>
-    <div class="tag-confirmation-actions">
-      <a href="/#library">暂不调整</a>
-      <button type="submit">保存标签</button>
+    <p class="capture-status status {{ preview_bookmark.status }}">
+      {% if preview_bookmark.status == 'success' %}● 正文已抓取，可以确认标签并收藏
+      {% elif preview_bookmark.status == 'fetch_failed' %}△ 网页访问失败，仍可保存网址
+      {% else %}△ 正文提取失败，仍可保存网址{% endif %}
+    </p>
+    <div class="capture-actions">
+      <button class="button secondary" type="submit" formnovalidate formaction="/bookmarks/{{ preview_bookmark.id }}/discard">重新输入</button>
+      <button class="capture-primary" type="submit">收藏 <span>→</span></button>
     </div>
   </form>
+  {% else %}
+  <form class="capture-form" id="capture" method="post" action="/bookmarks/preview">
+    <label for="url">网页地址</label>
+    <input id="url" name="url" type="url" placeholder="https://example.com/article" required>
+    <button class="capture-primary" type="submit">抓取 <span>→</span></button>
+  </form>
+  {% endif %}
 </section>
-{% endif %}
 
-<section class="library" id="library">
+<section class="library" id="library" data-library>
   <div class="section-heading">
     <div><p class="eyebrow">YOUR LIBRARY</p><h2>我的收藏</h2></div>
-    <form class="search-form" method="get" action="/">
-      <input name="q" value="{{ q }}" placeholder="搜索标题、网址或正文">
-      <select name="tag" aria-label="按标签筛选">
+    <form class="search-form" method="get" action="/" data-live-search>
+      <input name="q" value="{{ q }}" placeholder="输入即筛选标题、网址或正文" aria-label="搜索收藏" data-library-search autocomplete="off">
+      <select name="tag" aria-label="按标签筛选" data-library-tag>
         <option value="">全部标签</option>
         {% for item in tags %}<option value="{{ item.name }}" {% if active_tag == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
       </select>
-      <button type="submit">搜索</button>
+      <span class="search-status" data-search-status aria-live="polite"></span>
     </form>
   </div>
 
+  <div class="library-results" data-library-results>
   {% if bookmarks %}
     <div class="bookmark-grid">
       {% for bookmark in bookmarks %}
@@ -102,5 +95,6 @@
       <span>◇</span><h3>这里还没有匹配的收藏</h3><p>从上方粘贴一个公开网页地址开始。</p>
     </div>
   {% endif %}
+  </div>
 </section>
 {% endblock %}

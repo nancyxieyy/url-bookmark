@@ -63,6 +63,20 @@ def create_db_and_tables() -> None:
                     "ON bookmark (deleted_at)"
                 )
             )
+    if "is_draft" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE bookmark ADD COLUMN is_draft "
+                    "BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_bookmark_is_draft "
+                    "ON bookmark (is_draft)"
+                )
+            )
 
 
 def get_session():

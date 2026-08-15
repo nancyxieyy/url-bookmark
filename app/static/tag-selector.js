@@ -186,13 +186,80 @@ document.querySelectorAll("[data-tag-recommender]").forEach((recommender) => {
   }
 });
 
-document.querySelectorAll("[data-dialog-open]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const dialog = document.getElementById(button.dataset.dialogOpen);
+document.addEventListener("click", (event) => {
+  const openButton = event.target.closest("[data-dialog-open]");
+  if (openButton) {
+    const dialog = document.getElementById(openButton.dataset.dialogOpen);
     if (dialog) dialog.showModal();
-  });
+    return;
+  }
+
+  const closeButton = event.target.closest("[data-dialog-close]");
+  if (closeButton) closeButton.closest("dialog")?.close();
 });
 
-document.querySelectorAll("[data-dialog-close]").forEach((button) => {
-  button.addEventListener("click", () => button.closest("dialog")?.close());
+document.querySelectorAll("[data-live-search]").forEach((form) => {
+  const search = form.querySelector("[data-library-search]");
+  const tag = form.querySelector("[data-library-tag]");
+  const status = form.querySelector("[data-search-status]");
+  const results = document.querySelector("[data-library-results]");
+  if (!search || !tag || !results) return;
+
+  let timer;
+  let controller;
+
+  const refresh = async () => {
+    controller?.abort();
+    const requestController = new AbortController();
+    controller = requestController;
+    const url = new URL(window.location.href);
+    const query = search.value.trim();
+    if (query) url.searchParams.set("q", query);
+    else url.searchParams.delete("q");
+    if (tag.value) url.searchParams.set("tag", tag.value);
+    else url.searchParams.delete("tag");
+    url.searchParams.delete("message");
+    url.hash = "library";
+
+    results.classList.add("loading");
+    status.textContent = "正在筛选…";
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "text/html" },
+        signal: requestController.signal,
+      });
+      if (!response.ok) throw new Error("筛选失败");
+      const html = await response.text();
+      const nextPage = new DOMParser().parseFromString(html, "text/html");
+      const nextResults = nextPage.querySelector("[data-library-results]");
+      if (!nextResults) throw new Error("筛选结果不可用");
+      results.replaceChildren(...nextResults.childNodes);
+      window.history.replaceState({}, "", url);
+      const count = results.querySelectorAll(".bookmark-card").length;
+      status.textContent = count ? `已显示 ${count} 条` : "没有匹配结果";
+    } catch (error) {
+      if (error.name !== "AbortError") status.textContent = "筛选暂时失败";
+    } finally {
+      if (controller === requestController) results.classList.remove("loading");
+    }
+  };
+
+  const schedule = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(refresh, 180);
+  };
+
+  search.addEventListener("input", schedule);
+  tag.addEventListener("change", refresh);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    refresh();
+  });
+  document.addEventListener("click", (event) => {
+    const tagLink = event.target.closest(".bookmark-card .tag");
+    if (!tagLink) return;
+    event.preventDefault();
+    tag.value = new URL(tagLink.href).searchParams.get("tag") || "";
+    refresh();
+  });
 });

@@ -23,6 +23,21 @@
         data-new-tag
       >
     </label>
+    {% if tag_recommender_endpoint %}
+    <section
+      class="tag-menu-recommender"
+      data-tag-recommender
+      data-endpoint="{{ tag_recommender_endpoint }}"
+      data-auto-recommend="{% if tag_recommender_auto %}true{% else %}false{% endif %}"
+    >
+      <div class="tag-recommender-heading">
+        <div><strong>AI 推荐</strong><small>点击后加入标签</small></div>
+        <button class="button secondary compact" type="button" data-recommend-tags>{% if tag_recommender_auto %}重新生成{% else %}生成推荐{% endif %}</button>
+      </div>
+      <p class="tag-recommend-status" data-recommend-status>{% if tag_recommender_auto %}正在读取正文并整理标签…{% else %}优先推荐已有标签，必要时建议少量新标签。{% endif %}</p>
+      <div class="tag-recommend-results" data-recommend-results hidden></div>
+    </section>
+    {% endif %}
     <div class="tag-option-list" data-tag-options>
       {% for choice in tag_choices %}
       <label class="tag-menu-option">

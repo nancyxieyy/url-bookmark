@@ -26,12 +26,16 @@ with sync_playwright() as playwright:
 
     # Security validation happens before a bookmark is created.
     page.locator("#url").fill("http://127.0.0.1/private")
-    page.get_by_role("button", name="收藏并抓取").click()
+    page.get_by_role("button", name="抓取").click()
     page.wait_for_load_state("networkidle")
     assert "不能访问本机或内网地址" in page.locator(".notice.error").inner_text()
 
     # A valid URL is retained even if its content cannot be fetched.
     page.locator("#url").fill(TEST_URL)
+    page.get_by_role("button", name="抓取").click()
+    page.wait_for_load_state("networkidle")
+    assert "仍可添加标签并收藏" in page.locator(".notice.success").inner_text()
+    assert page.get_by_role("button", name="收藏").is_visible()
     page.locator("[data-tag-trigger]").click()
     assert page.locator("[data-tag-menu]").is_visible()
     assert page.get_by_placeholder("添加新的标签").is_visible()
@@ -45,19 +49,33 @@ with sync_playwright() as playwright:
     page.screenshot(path=str(TAG_MENU_SCREENSHOT), full_page=True)
     page.get_by_role("button", name="完成").click()
     assert page.locator("[data-tag-menu]").is_hidden()
-    page.get_by_role("button", name="收藏并抓取").click()
+    page.get_by_role("button", name="收藏").click()
     page.wait_for_load_state("networkidle")
-    assert "网址已收藏" in page.locator(".notice.success").inner_text()
+    assert "收藏成功" in page.locator(".notice.success").inner_text()
     test_card = page.locator(".bookmark-card").filter(
         has=page.locator(f'a[href="{TEST_URL}"]')
     )
     assert test_card.count() == 1
     assert test_card.get_by_role("link", name="Browser Test", exact=True).is_visible()
 
+    # Search filters while typing without a separate submit click.
+    search = page.get_by_role("textbox", name="搜索收藏")
+    search.fill("does-not-match")
+    page.wait_for_timeout(350)
+    assert page.locator(".bookmark-card").count() == 0
+    search.fill("example.invalid")
+    page.wait_for_timeout(350)
+    test_card = page.locator(".bookmark-card").filter(
+        has=page.locator(f'a[href="{TEST_URL}"]')
+    )
+    assert test_card.count() == 1
+
     test_card.get_by_role("link", name="查看详情 →").click()
     page.wait_for_load_state("networkidle")
     assert page.get_by_role("button", name="重新抓取").is_visible()
-    assert page.get_by_role("link", name="编辑").is_visible()
+    edit_link = page.get_by_role("link", name="编辑")
+    assert edit_link.is_visible()
+    assert edit_link.evaluate("node => getComputedStyle(node).alignItems") == "center"
 
     page.get_by_role("link", name="编辑").click()
     page.locator("#title").fill("Browser acceptance bookmark")
@@ -77,9 +95,12 @@ with sync_playwright() as playwright:
 
     page.get_by_role("link", name="返回收藏").click()
     page.wait_for_load_state("networkidle")
+    page.get_by_role("combobox", name="按标签筛选").select_option(label="工作")
+    page.wait_for_timeout(250)
     test_card = page.locator(".bookmark-card").filter(
         has=page.locator(f'a[href="{TEST_URL}"]')
     )
+    assert test_card.count() == 1
     test_card.get_by_role("button", name="删除").click()
     confirm_dialog = page.locator("dialog[open]")
     assert confirm_dialog.get_by_text("确定删除这条收藏吗？", exact=True).is_visible()
@@ -94,6 +115,8 @@ with sync_playwright() as playwright:
     page.get_by_role("link", name="回收站").click()
     page.wait_for_load_state("networkidle")
     assert page.get_by_role("heading", name="回收站").is_visible()
+    back_to_library = page.get_by_role("link", name="返回我的收藏")
+    assert back_to_library.evaluate("node => getComputedStyle(node).alignItems") == "center"
     trash_card = page.locator(".trash-card").filter(has_text="Browser acceptance bookmark")
     assert trash_card.count() == 1
     page.screenshot(path=str(TRASH_SCREENSHOT), full_page=True)
@@ -101,7 +124,7 @@ with sync_playwright() as playwright:
     page.wait_for_load_state("networkidle")
     assert page.get_by_text("Browser acceptance bookmark", exact=True).count() == 0
 
-    page.get_by_role("link", name="返回我的收藏").click()
+    back_to_library.click()
     page.wait_for_load_state("networkidle")
     test_card = page.locator(".bookmark-card").filter(
         has=page.locator(f'a[href="{TEST_URL}"]')

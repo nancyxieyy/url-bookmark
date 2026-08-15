@@ -52,6 +52,7 @@ def test_startup_migrates_existing_bookmark_table(tmp_path, monkeypatch):
 
     columns = {item["name"] for item in inspect(old_engine).get_columns("bookmark")}
     assert "deleted_at" in columns
+    assert "is_draft" in columns
 
 
 def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
@@ -78,28 +79,28 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
     try:
         with TestClient(app) as client:
             response = client.post(
-                "/bookmarks",
-                data={
-                    "url": "https://example.com/article",
-                    "tag_choices": ["AI", "Python"],
-                },
+                "/bookmarks/preview",
+                data={"url": "https://example.com/article"},
                 follow_redirects=False,
             )
             assert response.status_code == 303
             assert "/?suggest_for=" in response.headers["location"]
-            assert "#tag-confirmation" in response.headers["location"]
+            assert "#capture" in response.headers["location"]
 
             search = client.get("/?q=Searchable&tag=AI")
             assert search.status_code == 200
-            assert "Test article" in search.text
+            assert "Test article" not in search.text
 
             with Session(engine) as session:
                 bookmark = session.exec(select(Bookmark)).one()
                 bookmark_id = bookmark.id
+                assert bookmark.is_draft is True
 
             confirmation = client.get(f"/?suggest_for={bookmark_id}")
             assert confirmation.status_code == 200
-            assert "正文已抓取，在这里确认标签" in confirmation.text
+            assert "正文已抓取，可以确认标签并收藏" in confirmation.text
+            assert "AI 推荐" in confirmation.text
+            assert ">收藏 <" in confirmation.text
             assert "回收站" in confirmation.text
 
             saved_tags = client.post(
@@ -109,6 +110,11 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             )
             assert saved_tags.status_code == 303
             assert saved_tags.headers["location"].endswith("#library")
+
+            with Session(engine) as session:
+                assert session.get(Bookmark, bookmark_id).is_draft is False
+            search = client.get("/?q=Searchable&tag=AI")
+            assert "Test article" in search.text
 
             monkeypatch.setattr(
                 "app.main.recommend_tags",
@@ -188,6 +194,22 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert "Expired trash item" not in expired_cleanup.text
             with Session(engine) as session:
                 assert session.get(Bookmark, expired_id) is None
+
+            with Session(engine) as session:
+                stale_draft = Bookmark(
+                    url="https://example.com/stale-draft",
+                    title="Stale draft",
+                    status="success",
+                    is_draft=True,
+                    updated_at=datetime.now(timezone.utc) - timedelta(hours=25),
+                )
+                session.add(stale_draft)
+                session.commit()
+                session.refresh(stale_draft)
+                stale_draft_id = stale_draft.id
+            assert "Stale draft" not in client.get("/").text
+            with Session(engine) as session:
+                assert session.get(Bookmark, stale_draft_id) is None
 
             api_response = client.post(
                 "/api/bookmarks",
