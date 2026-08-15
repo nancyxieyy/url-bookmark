@@ -175,11 +175,10 @@ with TemporaryDirectory(prefix="url-bookmark-extension-") as profile_dir:
         popup.get_by_text("已从浏览器读取正文", exact=False).wait_for()
 
         assert popup.locator("#bookmark-form").is_visible()
-        assert popup.get_by_text("正文只保留在本机，点击收藏前不会上传。").is_visible()
-        assert suggestion_requests == 0
+        assert popup.get_by_text("推荐标签会自动显示在标签菜单中。").is_visible()
         assert created_payload == {}
 
-        popup.get_by_role("button", name="生成 AI 推荐 ＋").click()
+        popup.get_by_role("button", name="选择标签").click()
         popup.get_by_role("button", name="＋ Readability").wait_for()
         assert suggestion_requests == 1
         popup.get_by_role("button", name="＋ Readability").click()
@@ -244,8 +243,8 @@ with TemporaryDirectory(prefix="url-bookmark-extension-") as profile_dir:
         )
         js_popup.goto(f"chrome-extension://{extension_id}/popup.html")
         js_popup.get_by_text("已从浏览器读取正文", exact=False).wait_for()
-        js_popup.get_by_role("button", name="生成 AI 推荐 ＋").click()
-        js_popup.get_by_text("仍然可以直接收藏", exact=False).wait_for()
+        js_popup.wait_for_timeout(300)
+        assert suggestion_requests == 2
         js_popup.get_by_role("button", name="收藏 →").click()
         js_popup.get_by_text("已收藏：JS rendered article").wait_for()
         assert "inserted by JavaScript" in created_payload["markdown_content"]

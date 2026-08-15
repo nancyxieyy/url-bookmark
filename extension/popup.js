@@ -1,7 +1,6 @@
 const form = document.querySelector("#bookmark-form");
 const retryButton = document.querySelector("#preview-button");
 const saveButton = document.querySelector("#save-button");
-const aiButton = document.querySelector("#ai-suggestions-button");
 const titleElement = document.querySelector("#page-title");
 const urlElement = document.querySelector("#page-url");
 const notesInput = document.querySelector("#notes");
@@ -229,7 +228,6 @@ function displayChosenContent(label, content) {
     ? `${content.length.toLocaleString()} 字符` : "未保存正文";
   captureSourceElement.textContent = `来源：${localCapture?.source || new URL(currentPage.url).hostname}`;
   fallbackActions.hidden = true;
-  aiButton.hidden = !content.markdownContent;
   form.hidden = false;
 }
 
@@ -268,7 +266,7 @@ async function captureCurrentPage() {
     titleElement.textContent = currentPage.title;
     if (localCapture.readability) {
       displayChosenContent("✓ 已从浏览器读取正文", localCapture.readability);
-      showStatus("正文只保留在本机，点击收藏前不会上传。", "success");
+      showStatus("正文已读取，推荐标签会自动显示在标签菜单中。", "success");
     } else {
       chosenContent = null;
       captureSummary.hidden = false;
@@ -276,11 +274,11 @@ async function captureCurrentPage() {
       captureLengthElement.textContent = "仍可只收藏网址";
       captureSourceElement.textContent = `来源：${localCapture.source}`;
       fallbackActions.hidden = false;
-      aiButton.hidden = true;
       retryButton.hidden = false;
       showStatus("未识别到正文，仍可只收藏网址。", "error");
     }
     await checkDuplicate();
+    if (chosenContent?.markdownContent) await generateRecommendations();
   } catch (error) {
     localCapture = { source: new URL(currentPage.url).hostname };
     chosenContent = null;
@@ -300,10 +298,8 @@ urlOnlyButton.addEventListener("click", () => {
   showStatus("将只保存网址、标题、标签和备注。", "success");
 });
 
-aiButton.addEventListener("click", async () => {
+async function generateRecommendations() {
   if (!chosenContent?.markdownContent) return;
-  aiButton.disabled = true;
-  aiButton.querySelector("span").textContent = "正在生成推荐…";
   try {
     const response = await apiFetch("/api/bookmarks/browser-tag-suggestions", {
       method: "POST",
@@ -313,18 +309,11 @@ aiButton.addEventListener("click", async () => {
     const payload = await apiPayload(response, "AI 推荐暂时不可用");
     recommendations = uniqueTags([...payload.existing_tags, ...payload.new_tags]);
     renderRecommendations();
-    openTagMenu();
-    showStatus(recommendations.length
-      ? "AI 推荐已生成，请点击需要的标签。" : "AI 没有给出新的标签建议。", "success");
-  } catch (error) {
+  } catch (_) {
     recommendations = [];
     renderRecommendations();
-    showStatus(`${error.message || "AI 推荐失败"}；仍然可以直接收藏。`, "error");
-  } finally {
-    aiButton.disabled = false;
-    aiButton.querySelector("span").textContent = "生成 AI 推荐";
   }
-});
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();

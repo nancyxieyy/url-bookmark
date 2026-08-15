@@ -1,7 +1,7 @@
 :root {
-  --bg: #fff;
-  --surface: #fff;
-  --surface-subtle: #f8f9fa;
+  --bg: #f4f0e7;
+  --surface: #fffdf7;
+  --surface-subtle: #f8f4eb;
   --text-primary: #202124;
   --text-secondary: #5f6368;
   --text-muted: #80868b;
@@ -186,7 +186,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); box-sh
 .tag-menu-footer { padding: 6px; border-top: 1px solid var(--border); }
 .tag-menu-footer button { width: 100%; min-height: 36px; border: 0; border-radius: var(--radius-sm); background: var(--surface-subtle); color: var(--accent); font-weight: 600; cursor: pointer; }
 
-.primary-button, .secondary-button {
+.primary-button {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -198,9 +198,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); box-sh
   cursor: pointer;
 }
 .primary-button { width: 100%; display: flex; align-items: center; justify-content: space-between; }
-.secondary-button { width: max-content; justify-self: end; display: inline-flex; align-items: center; gap: 8px; background: var(--accent-soft); border-color: transparent; }
-.primary-button:hover, .secondary-button:hover { border-color: var(--accent); background: var(--accent-soft); }
-.primary-button:disabled, .secondary-button:disabled { cursor: wait; opacity: .55; }
+.primary-button:hover { border-color: var(--accent); background: var(--accent-soft); }
+.primary-button:disabled { cursor: wait; opacity: .55; }
 #save-button {
   width: 100%;
   min-height: 42px;

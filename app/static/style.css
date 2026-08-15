@@ -1,7 +1,7 @@
 :root {
-  --bg: #f8f9fa;
-  --surface: #ffffff;
-  --surface-subtle: #f1f3f4;
+  --bg: #f4f0e7;
+  --surface: #fffdf7;
+  --surface-subtle: #f8f4eb;
   --text-primary: #202124;
   --text-secondary: #5f6368;
   --text-muted: #80868b;
@@ -212,7 +212,7 @@ button.danger.solid { background: #9c392d; color: white; border-color: #9c392d; 
 .topbar {
   height: 56px;
   gap: 24px;
-  background: rgba(255,255,255,.96);
+  background: rgba(255,253,247,.96);
   border-color: var(--border);
 }
 .topbar .brand { color: var(--brand); font-size: 18px; }
@@ -273,7 +273,7 @@ button.danger.solid { background: var(--danger); border-color: var(--danger); }
 
 .bookmark-grid { gap: 12px; }
 .bookmark-card { height: 340px; min-height: 340px; padding: 20px; border-radius: var(--radius-lg); transition: border-color .15s, background .15s, box-shadow .15s; }
-.bookmark-card:hover { transform: none; border-color: var(--border-strong); background: #fcfcfc; box-shadow: 0 2px 8px rgba(60,64,67,.08); }
+.bookmark-card:hover { transform: none; border-color: var(--border-strong); background: #fffaf0; box-shadow: 0 2px 8px rgba(60,64,67,.08); }
 .bookmark-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .status { display: inline-flex; align-items: center; width: max-content; padding: 4px 8px; border-radius: 999px; color: var(--success); background: var(--success-soft); font-size: 11px; font-weight: 600; }
 .status.fetch_failed, .status.extract_failed { color: var(--warning); background: var(--warning-soft); }
