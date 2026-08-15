@@ -47,9 +47,10 @@ try:
         page.on("pageerror", lambda error: browser_errors.append(str(error)))
         page.route("**/api/bookmarks/*/tag-suggestions", fulfill_suggestions)
 
-        page.goto(f"{BASE_URL}/bookmarks/{bookmark_id}/edit?recommend=1")
+        page.goto(f"{BASE_URL}/?suggest_for={bookmark_id}#tag-confirmation")
         page.wait_for_load_state("networkidle")
-        assert "recommend=" not in page.url
+        assert page.url.startswith(f"{BASE_URL}/?suggest_for={bookmark_id}")
+        assert page.get_by_text("正文已抓取，在这里确认标签", exact=True).is_visible()
         assert page.get_by_text("优先匹配已有标签", exact=True).is_visible()
         assert page.get_by_text("建议的新标签", exact=True).is_visible()
         assert page.get_by_role("button", name="＋ 技术").is_visible()
@@ -60,16 +61,19 @@ try:
         assert page.get_by_role("button", name="✓ 技术").get_attribute("aria-pressed") == "true"
         assert page.get_by_role("button", name="✓ FastAPI").get_attribute("aria-pressed") == "true"
 
-        page.locator("[data-tag-trigger]").click()
-        assert page.get_by_role("checkbox", name="技术").is_checked()
-        assert page.get_by_role("checkbox", name="FastAPI").is_checked()
-        page.get_by_role("button", name="完成").click()
+        confirmation = page.locator("#tag-confirmation")
+        confirmation.locator("[data-tag-trigger]").click()
+        assert confirmation.get_by_role("checkbox", name="技术").is_checked()
+        assert confirmation.get_by_role("checkbox", name="FastAPI").is_checked()
+        confirmation.get_by_role("button", name="完成").click()
         page.screenshot(path=str(SCREENSHOT), full_page=True)
 
-        page.get_by_role("button", name="保存修改").click()
+        page.get_by_role("button", name="保存标签").click()
         page.wait_for_load_state("networkidle")
-        assert page.get_by_text("FastAPI", exact=True).is_visible()
-        assert page.get_by_text("技术", exact=True).is_visible()
+        assert page.url == f"{BASE_URL}/?message=%E6%A0%87%E7%AD%BE%E5%B7%B2%E4%BF%9D%E5%AD%98#library"
+        saved_card = page.locator(".bookmark-card").filter(has_text=test_title)
+        assert saved_card.get_by_text("FastAPI", exact=True).is_visible()
+        assert saved_card.get_by_text("技术", exact=True).is_visible()
         assert not browser_errors, browser_errors
         browser.close()
 finally:

@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 BASE_URL = "http://127.0.0.1:8765"
 SCREENSHOT = Path("/tmp/url-bookmark-home.png")
 TAG_MENU_SCREENSHOT = Path("/tmp/url-bookmark-tags-open.png")
+TRASH_SCREENSHOT = Path("/tmp/url-bookmark-trash.png")
 TEST_URL = f"https://example.invalid/article?browser-test={uuid4().hex}"
 
 
@@ -74,15 +75,53 @@ with sync_playwright() as playwright:
     assert page.get_by_text("工作", exact=True).is_visible()
     assert page.get_by_text("AI", exact=True).count() == 0
 
-    page.on("dialog", lambda dialog: dialog.accept())
-    page.get_by_role("button", name="删除").click()
+    page.get_by_role("link", name="返回收藏").click()
+    page.wait_for_load_state("networkidle")
+    test_card = page.locator(".bookmark-card").filter(
+        has=page.locator(f'a[href="{TEST_URL}"]')
+    )
+    test_card.get_by_role("button", name="删除").click()
+    confirm_dialog = page.locator("dialog[open]")
+    assert confirm_dialog.get_by_text("确定删除这条收藏吗？", exact=True).is_visible()
+    confirm_dialog.get_by_role("button", name="取消").click()
+    assert test_card.count() == 1
+
+    test_card.get_by_role("button", name="删除").click()
+    page.locator("dialog[open]").get_by_role("button", name="确认移入回收站").click()
     page.wait_for_load_state("networkidle")
     assert page.locator(f'a[href="{TEST_URL}"]').count() == 0
+
+    page.get_by_role("link", name="回收站").click()
+    page.wait_for_load_state("networkidle")
+    assert page.get_by_role("heading", name="回收站").is_visible()
+    trash_card = page.locator(".trash-card").filter(has_text="Browser acceptance bookmark")
+    assert trash_card.count() == 1
+    page.screenshot(path=str(TRASH_SCREENSHOT), full_page=True)
+    trash_card.get_by_role("button", name="撤销删除").click()
+    page.wait_for_load_state("networkidle")
+    assert page.get_by_text("Browser acceptance bookmark", exact=True).count() == 0
+
+    page.get_by_role("link", name="返回我的收藏").click()
+    page.wait_for_load_state("networkidle")
+    test_card = page.locator(".bookmark-card").filter(
+        has=page.locator(f'a[href="{TEST_URL}"]')
+    )
+    assert test_card.count() == 1
+    test_card.get_by_role("button", name="删除").click()
+    page.locator("dialog[open]").get_by_role("button", name="确认移入回收站").click()
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name="回收站").click()
+    page.wait_for_load_state("networkidle")
+    trash_card = page.locator(".trash-card").filter(has_text="Browser acceptance bookmark")
+    trash_card.get_by_role("button", name="彻底删除").click()
+    page.locator("dialog[open]").get_by_role("button", name="确认彻底删除").click()
+    page.wait_for_load_state("networkidle")
+    assert page.get_by_text("Browser acceptance bookmark", exact=True).count() == 0
 
     page.screenshot(path=str(SCREENSHOT), full_page=True)
     assert not browser_errors, browser_errors
     print(
         "Browser smoke test passed; screenshots: "
-        f"{SCREENSHOT}, {TAG_MENU_SCREENSHOT}"
+        f"{SCREENSHOT}, {TAG_MENU_SCREENSHOT}, {TRASH_SCREENSHOT}"
     )
     browser.close()

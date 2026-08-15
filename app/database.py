@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import URL
+from sqlalchemy import URL, inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -51,6 +51,18 @@ engine = create_engine(DATABASE_URL, **engine_options)
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
+    columns = {column["name"] for column in inspect(engine).get_columns("bookmark")}
+    if "deleted_at" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE bookmark ADD COLUMN deleted_at TIMESTAMP NULL")
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_bookmark_deleted_at "
+                    "ON bookmark (deleted_at)"
+                )
+            )
 
 
 def get_session():

@@ -35,25 +35,25 @@ document.querySelectorAll("[data-tag-select]").forEach((selector) => {
     );
 
   const createOption = (name) => {
-      const label = document.createElement("label");
-      label.className = "tag-menu-option";
+    const label = document.createElement("label");
+    label.className = "tag-menu-option";
 
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.name = "tag_choices";
-      checkbox.value = name;
-      checkbox.dataset.tagOption = "";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.name = "tag_choices";
+    checkbox.value = name;
+    checkbox.dataset.tagOption = "";
 
-      const check = document.createElement("span");
-      check.className = "tag-check";
-      check.setAttribute("aria-hidden", "true");
-      check.textContent = "✓";
+    const check = document.createElement("span");
+    check.className = "tag-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
 
-      const text = document.createElement("span");
-      text.textContent = name;
-      label.append(checkbox, check, text);
-      options.prepend(label);
-      return checkbox;
+    const text = document.createElement("span");
+    text.textContent = name;
+    label.append(checkbox, check, text);
+    options.prepend(label);
+    return checkbox;
   };
 
   const setTagSelected = (name, selected = true) => {
@@ -184,4 +184,15 @@ document.querySelectorAll("[data-tag-recommender]").forEach((recommender) => {
     window.history.replaceState({}, "", url);
     loadSuggestions();
   }
+});
+
+document.querySelectorAll("[data-dialog-open]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const dialog = document.getElementById(button.dataset.dialogOpen);
+    if (dialog) dialog.showModal();
+  });
+});
+
+document.querySelectorAll("[data-dialog-close]").forEach((button) => {
+  button.addEventListener("click", () => button.closest("dialog")?.close());
 });

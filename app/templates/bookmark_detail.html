@@ -14,7 +14,7 @@
     <div class="detail-actions">
       <a class="button secondary" href="/bookmarks/{{ bookmark.id }}/edit">编辑</a>
       <form method="post" action="/bookmarks/{{ bookmark.id }}/refetch"><button type="submit">重新抓取</button></form>
-      <form method="post" action="/bookmarks/{{ bookmark.id }}/delete" onsubmit="return confirm('确定删除这条收藏吗？')"><button class="danger" type="submit">删除</button></form>
+      <form method="post" action="/bookmarks/{{ bookmark.id }}/delete" onsubmit="return confirm('确定把这条收藏移入回收站吗？')"><button class="danger" type="submit">移入回收站</button></form>
     </div>
   </header>
   <div class="metadata">

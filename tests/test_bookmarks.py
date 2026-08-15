@@ -1,9 +1,12 @@
 from collections.abc import Generator
 import base64
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import app.database as database_module
 from app.database import get_database_url, get_session
 from app.database import normalize_database_url
 from app.main import app
@@ -31,6 +34,24 @@ def test_build_supabase_url_from_separate_password(monkeypatch):
     assert url.host == "pooler.example.com"
     assert url.database == "postgres"
     assert url.query["sslmode"] == "require"
+
+
+def test_startup_migrates_existing_bookmark_table(tmp_path, monkeypatch):
+    old_engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with old_engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE bookmark ("
+                "id INTEGER PRIMARY KEY, url VARCHAR NOT NULL, title VARCHAR NOT NULL"
+                ")"
+            )
+        )
+
+    monkeypatch.setattr(database_module, "engine", old_engine)
+    database_module.create_db_and_tables()
+
+    columns = {item["name"] for item in inspect(old_engine).get_columns("bookmark")}
+    assert "deleted_at" in columns
 
 
 def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
@@ -65,7 +86,8 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                 follow_redirects=False,
             )
             assert response.status_code == 303
-            assert "/edit?recommend=1" in response.headers["location"]
+            assert "/?suggest_for=" in response.headers["location"]
+            assert "#tag-confirmation" in response.headers["location"]
 
             search = client.get("/?q=Searchable&tag=AI")
             assert search.status_code == 200
@@ -74,6 +96,19 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             with Session(engine) as session:
                 bookmark = session.exec(select(Bookmark)).one()
                 bookmark_id = bookmark.id
+
+            confirmation = client.get(f"/?suggest_for={bookmark_id}")
+            assert confirmation.status_code == 200
+            assert "正文已抓取，在这里确认标签" in confirmation.text
+            assert "回收站" in confirmation.text
+
+            saved_tags = client.post(
+                f"/bookmarks/{bookmark_id}/tags",
+                data={"tag_choices": ["AI"]},
+                follow_redirects=False,
+            )
+            assert saved_tags.status_code == 303
+            assert saved_tags.headers["location"].endswith("#library")
 
             monkeypatch.setattr(
                 "app.main.recommend_tags",
@@ -111,7 +146,48 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             )
             assert deleted.status_code == 303
             with Session(engine) as session:
-                assert session.exec(select(Bookmark)).first() is None
+                trashed = session.get(Bookmark, bookmark_id)
+                assert trashed is not None
+                assert trashed.deleted_at is not None
+
+            home = client.get("/")
+            assert "Edited title" not in home.text
+            trash = client.get("/trash")
+            assert trash.status_code == 200
+            assert "Edited title" in trash.text
+
+            restored = client.post(
+                f"/bookmarks/{bookmark_id}/restore", follow_redirects=False
+            )
+            assert restored.status_code == 303
+            with Session(engine) as session:
+                assert session.get(Bookmark, bookmark_id).deleted_at is None
+            assert "Edited title" in client.get("/").text
+
+            client.post(f"/bookmarks/{bookmark_id}/delete")
+            permanent = client.post(
+                f"/bookmarks/{bookmark_id}/permanent-delete",
+                follow_redirects=False,
+            )
+            assert permanent.status_code == 303
+            with Session(engine) as session:
+                assert session.get(Bookmark, bookmark_id) is None
+
+            with Session(engine) as session:
+                expired = Bookmark(
+                    url="https://example.com/expired",
+                    title="Expired trash item",
+                    status="fetch_failed",
+                    deleted_at=datetime.now(timezone.utc) - timedelta(days=31),
+                )
+                session.add(expired)
+                session.commit()
+                session.refresh(expired)
+                expired_id = expired.id
+            expired_cleanup = client.get("/trash")
+            assert "Expired trash item" not in expired_cleanup.text
+            with Session(engine) as session:
+                assert session.get(Bookmark, expired_id) is None
 
             api_response = client.post(
                 "/api/bookmarks",

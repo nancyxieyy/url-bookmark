@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import base64
+import math
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
@@ -29,6 +30,7 @@ from app.services.tag_recommender import TagRecommendationError, recommend_tags
 
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_TAG_CHOICES = ("Inbox", "稍后读", "AI", "技术", "学习", "工作")
+TRASH_RETENTION_DAYS = 30
 
 
 @asynccontextmanager
@@ -113,11 +115,37 @@ def remove_orphan_tags(session: Session) -> None:
             session.delete(tag)
 
 
+def purge_expired_bookmarks(session: Session) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=TRASH_RETENTION_DAYS)
+    expired = session.exec(
+        select(Bookmark)
+        .where(Bookmark.deleted_at.is_not(None), Bookmark.deleted_at <= cutoff)
+        .options(selectinload(Bookmark.tags))
+    ).all()
+    if not expired:
+        return 0
+    for bookmark in expired:
+        session.delete(bookmark)
+    session.commit()
+    remove_orphan_tags(session)
+    session.commit()
+    return len(expired)
+
+
+def trash_days_remaining(deleted_at: datetime) -> int:
+    if deleted_at.tzinfo is None:
+        deleted_at = deleted_at.replace(tzinfo=timezone.utc)
+    expires_at = deleted_at + timedelta(days=TRASH_RETENTION_DAYS)
+    seconds = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    return max(0, math.ceil(seconds / 86_400))
+
+
 def host_for(url: str) -> str:
     return urlparse(url).hostname or url
 
 
 templates.env.globals["host_for"] = host_for
+templates.env.globals["trash_days_remaining"] = trash_days_remaining
 
 
 @app.get("/health")
@@ -153,9 +181,15 @@ def index(
     request: Request,
     q: str = "",
     tag: str = "",
+    suggest_for: int | None = None,
     session: Session = Depends(get_session),
 ):
-    statement = select(Bookmark).options(selectinload(Bookmark.tags))
+    purge_expired_bookmarks(session)
+    statement = (
+        select(Bookmark)
+        .where(Bookmark.deleted_at.is_(None))
+        .options(selectinload(Bookmark.tags))
+    )
     if q.strip():
         pattern = f"%{q.strip()}%"
         statement = statement.where(
@@ -168,7 +202,22 @@ def index(
     if tag:
         statement = statement.where(Bookmark.tags.any(Tag.name == tag))
     bookmarks = session.exec(statement.order_by(Bookmark.created_at.desc())).all()
-    tags = session.exec(select(Tag).order_by(Tag.name)).all()
+    tags = session.exec(
+        select(Tag)
+        .where(Tag.bookmarks.any(Bookmark.deleted_at.is_(None)))
+        .order_by(Tag.name)
+    ).all()
+    suggested_bookmark = None
+    if suggest_for is not None:
+        suggested_bookmark = session.exec(
+            select(Bookmark)
+            .where(
+                Bookmark.id == suggest_for,
+                Bookmark.deleted_at.is_(None),
+                Bookmark.status == "success",
+            )
+            .options(selectinload(Bookmark.tags))
+        ).first()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -177,6 +226,13 @@ def index(
             "tags": tags,
             "tag_choices": available_tag_choices(session),
             "selected_tags": set(),
+            "suggested_bookmark": suggested_bookmark,
+            "suggested_tag_choices": available_tag_choices(session),
+            "suggested_selected_tags": (
+                {item.name for item in suggested_bookmark.tags}
+                if suggested_bookmark
+                else set()
+            ),
             "q": q,
             "active_tag": tag,
         },
@@ -201,7 +257,7 @@ def create_bookmark(
     if bookmark.status == "success" and os.getenv("DEEPSEEK_API_KEY", "").strip():
         message = "正文已抓取，请确认 AI 推荐标签。"
         return RedirectResponse(
-            f"/bookmarks/{bookmark.id}/edit?recommend=1&message={quote_plus(message)}",
+            f"/?suggest_for={bookmark.id}&message={quote_plus(message)}#tag-confirmation",
             status_code=303,
         )
     message = (
@@ -214,7 +270,14 @@ def create_bookmark(
 
 @app.get("/api/tags", response_model=list[str])
 def api_tags(session: Session = Depends(get_session)):
-    return [tag.name for tag in session.exec(select(Tag).order_by(Tag.name)).all()]
+    return [
+        tag.name
+        for tag in session.exec(
+            select(Tag)
+            .where(Tag.bookmarks.any(Bookmark.deleted_at.is_(None)))
+            .order_by(Tag.name)
+        ).all()
+    ]
 
 
 @app.post(
@@ -232,6 +295,8 @@ def api_tag_suggestions(
     ).first()
     if bookmark is None:
         raise HTTPException(status_code=404, detail="收藏不存在。")
+    if bookmark.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="回收站中的收藏不能生成标签推荐。")
     if bookmark.status != "success" or not bookmark.markdown_content.strip():
         raise HTTPException(status_code=409, detail="正文抓取成功后才能生成标签推荐。")
 
@@ -254,6 +319,25 @@ def api_tag_suggestions(
         ],
         new_tags=[tag for tag in suggestions.new_tags if tag.casefold() not in selected],
     )
+
+
+@app.post("/bookmarks/{bookmark_id}/tags")
+def update_bookmark_tags(
+    bookmark_id: int,
+    tags: str = Form(""),
+    tag_choices: list[str] = Form([]),
+    session: Session = Depends(get_session),
+):
+    bookmark = session.get(Bookmark, bookmark_id)
+    if bookmark is None or bookmark.deleted_at is not None:
+        return RedirectResponse("/?error=收藏不存在", status_code=303)
+    assign_tags(session, bookmark, merge_tag_fields(tags, tag_choices))
+    bookmark.updated_at = datetime.now(timezone.utc)
+    session.add(bookmark)
+    session.commit()
+    remove_orphan_tags(session)
+    session.commit()
+    return RedirectResponse("/?message=标签已保存#library", status_code=303)
 
 
 @app.post(
@@ -292,7 +376,7 @@ def bookmark_detail(
 ):
     bookmark = session.exec(
         select(Bookmark)
-        .where(Bookmark.id == bookmark_id)
+        .where(Bookmark.id == bookmark_id, Bookmark.deleted_at.is_(None))
         .options(selectinload(Bookmark.tags))
     ).first()
     if bookmark is None:
@@ -312,10 +396,10 @@ def edit_bookmark_page(
 ):
     bookmark = session.exec(
         select(Bookmark)
-        .where(Bookmark.id == bookmark_id)
+        .where(Bookmark.id == bookmark_id, Bookmark.deleted_at.is_(None))
         .options(selectinload(Bookmark.tags))
     ).first()
-    if bookmark is None:
+    if bookmark is None or bookmark.deleted_at is not None:
         return RedirectResponse("/?error=收藏不存在", status_code=303)
     return templates.TemplateResponse(
         request=request,
@@ -338,7 +422,7 @@ def update_bookmark(
     session: Session = Depends(get_session),
 ):
     bookmark = session.get(Bookmark, bookmark_id)
-    if bookmark is None:
+    if bookmark is None or bookmark.deleted_at is not None:
         return RedirectResponse("/?error=收藏不存在", status_code=303)
     try:
         normalized_url = validate_url(url)
@@ -365,7 +449,7 @@ def update_bookmark(
 @app.post("/bookmarks/{bookmark_id}/refetch")
 def refetch_bookmark(bookmark_id: int, session: Session = Depends(get_session)):
     bookmark = session.get(Bookmark, bookmark_id)
-    if bookmark is None:
+    if bookmark is None or bookmark.deleted_at is not None:
         return RedirectResponse("/?error=收藏不存在", status_code=303)
     result = extract_page(bookmark.url)
     if result.status == "success":
@@ -385,9 +469,54 @@ def refetch_bookmark(bookmark_id: int, session: Session = Depends(get_session)):
 @app.post("/bookmarks/{bookmark_id}/delete")
 def delete_bookmark(bookmark_id: int, session: Session = Depends(get_session)):
     bookmark = session.get(Bookmark, bookmark_id)
+    if bookmark is not None and bookmark.deleted_at is None:
+        bookmark.deleted_at = datetime.now(timezone.utc)
+        bookmark.updated_at = bookmark.deleted_at
+        session.add(bookmark)
+        session.commit()
+    return RedirectResponse("/?message=收藏已移入回收站", status_code=303)
+
+
+@app.get("/trash")
+def trash_page(request: Request, session: Session = Depends(get_session)):
+    purged_count = purge_expired_bookmarks(session)
+    bookmarks = session.exec(
+        select(Bookmark)
+        .where(Bookmark.deleted_at.is_not(None))
+        .options(selectinload(Bookmark.tags))
+        .order_by(Bookmark.deleted_at.desc())
+    ).all()
+    return templates.TemplateResponse(
+        request=request,
+        name="trash.html",
+        context={"bookmarks": bookmarks, "purged_count": purged_count},
+    )
+
+
+@app.post("/bookmarks/{bookmark_id}/restore")
+def restore_bookmark(bookmark_id: int, session: Session = Depends(get_session)):
+    bookmark = session.get(Bookmark, bookmark_id)
+    if bookmark is not None and bookmark.deleted_at is not None:
+        bookmark.deleted_at = None
+        bookmark.updated_at = datetime.now(timezone.utc)
+        session.add(bookmark)
+        session.commit()
+    return RedirectResponse("/trash?message=收藏已恢复", status_code=303)
+
+
+@app.post("/bookmarks/{bookmark_id}/permanent-delete")
+def permanently_delete_bookmark(
+    bookmark_id: int,
+    session: Session = Depends(get_session),
+):
+    bookmark = session.exec(
+        select(Bookmark)
+        .where(Bookmark.id == bookmark_id, Bookmark.deleted_at.is_not(None))
+        .options(selectinload(Bookmark.tags))
+    ).first()
     if bookmark is not None:
         session.delete(bookmark)
         session.commit()
         remove_orphan_tags(session)
         session.commit()
-    return RedirectResponse("/?message=收藏已删除", status_code=303)
+    return RedirectResponse("/trash?message=收藏已彻底删除", status_code=303)

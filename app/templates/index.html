@@ -15,7 +15,40 @@
   </form>
 </section>
 
-<section class="library">
+{% if suggested_bookmark %}
+<section class="tag-confirmation" id="tag-confirmation">
+  <div class="tag-confirmation-copy">
+    <p class="eyebrow">AI TAG SUGGESTIONS</p>
+    <h2>正文已抓取，在这里确认标签</h2>
+    <p>{{ suggested_bookmark.title }}</p>
+  </div>
+  <form method="post" action="/bookmarks/{{ suggested_bookmark.id }}/tags">
+    {% set selector_id = "suggested-tags" %}
+    {% set tag_choices = suggested_tag_choices %}
+    {% set selected_tags = suggested_selected_tags %}
+    {% include "_tag_selector.html" %}
+    <section
+      class="tag-recommender"
+      data-tag-recommender
+      data-endpoint="/api/bookmarks/{{ suggested_bookmark.id }}/tag-suggestions"
+      data-auto-recommend="true"
+    >
+      <div class="tag-recommender-heading">
+        <div><strong>AI 推荐</strong><small>点击建议后才会加入</small></div>
+        <button class="button secondary compact" type="button" data-recommend-tags>重新生成</button>
+      </div>
+      <p class="tag-recommend-status" data-recommend-status>正在读取正文并整理标签…</p>
+      <div class="tag-recommend-results" data-recommend-results hidden></div>
+    </section>
+    <div class="tag-confirmation-actions">
+      <a href="/#library">暂不调整</a>
+      <button type="submit">保存标签</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="library" id="library">
   <div class="section-heading">
     <div><p class="eyebrow">YOUR LIBRARY</p><h2>我的收藏</h2></div>
     <form class="search-form" method="get" action="/">
@@ -45,8 +78,22 @@
           <div class="tag-list">
             {% for item in bookmark.tags %}<a class="tag" href="/?tag={{ item.name|urlencode }}">{{ item.name }}</a>{% endfor %}
           </div>
-          <a class="detail-link" href="/bookmarks/{{ bookmark.id }}">查看详情 →</a>
+          <div class="card-actions">
+            <button class="card-delete" type="button" data-dialog-open="trash-dialog-{{ bookmark.id }}">删除</button>
+            <a class="detail-link" href="/bookmarks/{{ bookmark.id }}">查看详情 →</a>
+          </div>
         </div>
+        <dialog class="confirm-dialog" id="trash-dialog-{{ bookmark.id }}">
+          <p class="eyebrow">MOVE TO TRASH</p>
+          <h3>确定删除这条收藏吗？</h3>
+          <p>它会在回收站保留 30 天，期间可以随时恢复。</p>
+          <div class="dialog-actions">
+            <button class="button secondary" type="button" data-dialog-close>取消</button>
+            <form method="post" action="/bookmarks/{{ bookmark.id }}/delete">
+              <button class="danger solid" type="submit">确认移入回收站</button>
+            </form>
+          </div>
+        </dialog>
       </article>
       {% endfor %}
     </div>

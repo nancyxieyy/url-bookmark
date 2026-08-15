@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}回收站 · URL Bookmark{% endblock %}
+{% block content %}
+<section class="trash-page">
+  <div class="trash-heading">
+    <div>
+      <p class="eyebrow">TRASH</p>
+      <h1>回收站</h1>
+      <p>删除的收藏保留 30 天。到期后会在下一次访问时彻底清理。</p>
+    </div>
+    <a class="button secondary" href="/">← 返回我的收藏</a>
+  </div>
+
+  {% if purged_count %}<div class="notice success">已自动清理 {{ purged_count }} 条超过 30 天的收藏。</div>{% endif %}
+
+  {% if bookmarks %}
+  <div class="trash-list">
+    {% for bookmark in bookmarks %}
+    <article class="trash-card">
+      <div>
+        <span class="trash-expiry">还可恢复 {{ trash_days_remaining(bookmark.deleted_at) }} 天</span>
+        <h2>{{ bookmark.title }}</h2>
+        <a class="domain" href="{{ bookmark.url }}" target="_blank" rel="noopener noreferrer">{{ host_for(bookmark.url) }} ↗</a>
+        <div class="tag-list">{% for item in bookmark.tags %}<span class="tag">{{ item.name }}</span>{% endfor %}</div>
+      </div>
+      <div class="trash-actions">
+        <form method="post" action="/bookmarks/{{ bookmark.id }}/restore"><button type="submit">撤销删除</button></form>
+        <button class="danger" type="button" data-dialog-open="permanent-dialog-{{ bookmark.id }}">彻底删除</button>
+      </div>
+      <dialog class="confirm-dialog" id="permanent-dialog-{{ bookmark.id }}">
+        <p class="eyebrow">DELETE FOREVER</p>
+        <h3>彻底删除后无法恢复</h3>
+        <p>确认永久删除“{{ bookmark.title }}”吗？</p>
+        <div class="dialog-actions">
+          <button class="button secondary" type="button" data-dialog-close>取消</button>
+          <form method="post" action="/bookmarks/{{ bookmark.id }}/permanent-delete">
+            <button class="danger solid" type="submit">确认彻底删除</button>
+          </form>
+        </div>
+      </dialog>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state"><span>◇</span><h3>回收站是空的</h3><p>移入回收站的收藏会在这里保留 30 天。</p></div>
+  {% endif %}
+</section>
+{% endblock %}

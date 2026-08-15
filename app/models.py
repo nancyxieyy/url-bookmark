@@ -32,6 +32,7 @@ class Bookmark(SQLModel, table=True):
     error_message: str | None = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    deleted_at: datetime | None = Field(default=None, index=True)
 
     tags: list[Tag] = Relationship(
         back_populates="bookmarks", link_model=BookmarkTagLink
