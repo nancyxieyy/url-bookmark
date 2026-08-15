@@ -53,10 +53,15 @@ header a, header nav button {
   padding: 0 10px;
   border: 0;
   border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-weight: 500;
+  line-height: 1;
+  appearance: none;
   text-decoration: none;
   cursor: pointer;
 }
