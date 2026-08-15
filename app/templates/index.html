@@ -2,9 +2,8 @@
 {% block content %}
 <section class="hero">
   <div>
-    <p class="eyebrow">A SMALL, RELIABLE ARCHIVE</p>
-    <h1>收藏一个网址，<br>留下它真正重要的内容。</h1>
-    <p class="intro">自动提取标题和正文，保存为 Markdown。即使抓取失败，网址也不会丢。</p>
+    <h1>收藏网页</h1>
+    <p class="intro">保存网址和正文，之后随时找回来。即使正文抓取失败，网址也不会丢。</p>
   </div>
   {% if capture_bookmark %}
   <form class="capture-form preview" id="capture" method="post" action="/bookmarks/{{ capture_bookmark.id }}/tags{% if capture_is_duplicate %}?duplicate=1{% endif %}">
@@ -56,7 +55,7 @@
 
 <section class="library" id="library" data-library>
   <div class="section-heading">
-    <div><p class="eyebrow">YOUR LIBRARY</p><h2>我的收藏</h2></div>
+    <div><h2>我的收藏</h2></div>
     <div class="library-tools">
       <div class="view-toggle" aria-label="收藏排版">
         <button type="button" data-view-mode="grid" aria-pressed="true">卡片</button>
@@ -128,7 +127,7 @@
     </div>
   {% else %}
     <div class="empty-state">
-      <span>◇</span><h3>这里还没有匹配的收藏</h3><p>从上方粘贴一个公开网页地址开始。</p>
+      <span>◇</span><h3>还没有收藏</h3><p>粘贴一个网址，或者使用浏览器扩展开始收藏。</p>
     </div>
   {% endif %}
   </div>

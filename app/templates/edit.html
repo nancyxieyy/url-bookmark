@@ -3,7 +3,7 @@
 {% block content %}
 <a class="back-link" href="/bookmarks/{{ bookmark.id }}">← 返回详情</a>
 <section class="edit-panel">
-  <p class="eyebrow">EDIT BOOKMARK</p><h1>编辑收藏</h1>
+  <h1>编辑收藏</h1>
   <form method="post" action="/bookmarks/{{ bookmark.id }}/edit">
     {% if request.query_params.get('error') %}<p class="capture-status status error">△ {{ request.query_params.get('error') }}</p>{% endif %}
     <label for="title">标题</label>
