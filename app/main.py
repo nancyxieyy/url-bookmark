@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -16,6 +17,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
+
+load_dotenv()
 
 from app.database import create_db_and_tables, get_session
 from app.models import Bookmark, Tag
@@ -195,7 +198,7 @@ def create_bookmark(
     bookmark = create_bookmark_record(
         session, normalized_url, merge_tag_fields(tags, tag_choices)
     )
-    if bookmark.status == "success" and os.getenv("OPENAI_API_KEY", "").strip():
+    if bookmark.status == "success" and os.getenv("DEEPSEEK_API_KEY", "").strip():
         message = "正文已抓取，请确认 AI 推荐标签。"
         return RedirectResponse(
             f"/bookmarks/{bookmark.id}/edit?recommend=1&message={quote_plus(message)}",

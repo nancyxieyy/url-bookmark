@@ -52,7 +52,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
         "app.main.extract_page",
         lambda url: ExtractionResult("Test article", "# Body\n\nSearchable text"),
     )
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
 
     try:
         with TestClient(app) as client:

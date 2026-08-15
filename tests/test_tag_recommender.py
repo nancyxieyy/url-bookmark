@@ -19,19 +19,14 @@ class FakeResponse:
 
 def response_payload(suggestions: dict) -> dict:
     return {
-        "output": [
-            {
-                "type": "message",
-                "content": [
-                    {"type": "output_text", "text": json.dumps(suggestions)}
-                ],
-            }
+        "choices": [
+            {"message": {"content": json.dumps(suggestions)}}
         ]
     }
 
 
 def test_recommend_tags_prioritizes_and_cleans_existing_tags(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     captured = {}
 
     def fake_post(url, **kwargs):
@@ -56,20 +51,23 @@ def test_recommend_tags_prioritizes_and_cleans_existing_tags(monkeypatch):
 
     assert result.existing_tags == ["Python", "后端"]
     assert result.new_tags == ["FastAPI", "API"]
-    assert captured["url"] == "https://api.openai.com/v1/responses"
-    assert captured["payload"]["store"] is False
-    assert len(json.loads(captured["payload"]["input"])["markdown_excerpt"]) == 10_000
+    assert captured["url"] == "https://api.deepseek.com/v1/chat/completions"
+    assert captured["payload"]["model"] == "deepseek-v4-flash"
+    assert captured["payload"]["response_format"] == {"type": "json_object"}
+    assert captured["payload"]["thinking"] == {"type": "disabled"}
+    article = json.loads(captured["payload"]["messages"][1]["content"])
+    assert len(article["markdown_excerpt"]) == 10_000
 
 
 def test_recommend_tags_requires_api_key(monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
-    with pytest.raises(TagRecommendationError, match="OPENAI_API_KEY"):
+    with pytest.raises(TagRecommendationError, match="DEEPSEEK_API_KEY"):
         recommend_tags("Title", "Body", [])
 
 
 def test_recommend_tags_never_exceeds_total_limit(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     existing = [f"Tag {index}" for index in range(5)]
     monkeypatch.setattr(
         tag_recommender.httpx,

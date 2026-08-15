@@ -66,7 +66,7 @@ URL 抓取设置了请求超时、最多 5 次重定向和 5 MB 响应限制。�
 FastAPI 路由与产品规则
         ├── SQLModel → SQLite（Bookmark / Tag）
         ├── Extractor → httpx → Trafilatura → Markdown
-        └── Tag Recommender → OpenAI Responses API → 用户确认
+        └── Tag Recommender → DeepSeek API → 用户确认
 ```
 
 ```text
@@ -116,9 +116,9 @@ uvicorn app.main:app --reload
 
 - `DATABASE_URL`：Supabase Dashboard 的 **Connect → Session pooler** PostgreSQL 连接串。建议使用 Session pooler，保留连接串中的 `sslmode=require`，不要提交到 GitHub。
 - `APP_PASSWORD`：网页版访问密码，建议使用至少 16 位随机密码。
-- `OPENAI_API_KEY`：用于生成 AI 标签推荐；未配置时只有推荐功能不可用，收藏和正文抓取不受影响。
+- `DEEPSEEK_API_KEY`：用于生成 AI 标签推荐；未配置时只有推荐功能不可用，收藏和正文抓取不受影响。
 
-`OPENAI_MODEL` 默认使用 `gpt-5.6-luna`，可以在 Render 环境变量中替换成账号可用的其他文本模型。
+`DEEPSEEK_MODEL` 默认使用 `deepseek-v4-flash`。本地开发可以直接打开项目根目录中已被 `.gitignore` 排除的 `.env`，在 `DEEPSEEK_API_KEY=` 后填入密钥。
 
 `APP_USERNAME` 默认为 `admin`。部署完成后，浏览器访问 Render 提供的固定 `*.onrender.com` 地址时会显示 HTTP Basic Auth 登录框。
 
@@ -231,7 +231,7 @@ AI 协作过程中出现过几个实际问题：
 - 不执行 JavaScript，因此高度依赖客户端渲染的页面可能无法提取。
 - 登录墙、付费墙、验证码和严格反爬网站可能抓取失败。
 - 搜索使用 SQLite `LIKE`，没有分词、相关性排序或语义搜索。
-- AI 标签推荐依赖 `OPENAI_API_KEY` 和外部模型服务；请求失败时不会影响收藏数据。
+- AI 标签推荐依赖 `DEEPSEEK_API_KEY` 和外部模型服务；请求失败时不会影响收藏数据。
 - 标签名称目前区分大小写。
 - 这是本地单用户作业，没有账号、权限和跨设备同步。
 - 扩展目前固定连接本机 `127.0.0.1:8000`，使用前需要先启动后端。
