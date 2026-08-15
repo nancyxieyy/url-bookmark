@@ -4,7 +4,7 @@ import base64
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.database import get_session
+from app.database import get_database_url, get_session
 from app.database import normalize_database_url
 from app.main import app
 from app.models import Bookmark
@@ -16,6 +16,20 @@ def test_normalize_database_url_for_supabase():
         "postgresql+psycopg://user:pass@host/db"
     )
     assert normalize_database_url("sqlite:///data/test.db") == "sqlite:///data/test.db"
+
+
+def test_build_supabase_url_from_separate_password(monkeypatch):
+    monkeypatch.setenv("SUPABASE_DB_PASSWORD", "p@ss:/word")
+    monkeypatch.setenv("SUPABASE_DB_HOST", "pooler.example.com")
+    monkeypatch.setenv("SUPABASE_DB_USER", "postgres.project-ref")
+
+    url = get_database_url()
+
+    assert url.username == "postgres.project-ref"
+    assert url.password == "p@ss:/word"
+    assert url.host == "pooler.example.com"
+    assert url.database == "postgres"
+    assert url.query["sslmode"] == "require"
 
 
 def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from sqlalchemy import URL
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -18,11 +19,31 @@ def normalize_database_url(database_url: str) -> str:
     return database_url
 
 
-DATABASE_URL = normalize_database_url(
-    os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'bookmarks.db'}")
-)
+def get_database_url() -> str | URL:
+    """Build a safe Postgres URL when the password is supplied separately."""
+    supabase_password = os.getenv("SUPABASE_DB_PASSWORD")
+    supabase_host = os.getenv("SUPABASE_DB_HOST")
+    supabase_user = os.getenv("SUPABASE_DB_USER")
+
+    if supabase_password and supabase_host and supabase_user:
+        return URL.create(
+            "postgresql+psycopg",
+            username=supabase_user,
+            password=supabase_password,
+            host=supabase_host,
+            port=int(os.getenv("SUPABASE_DB_PORT", "5432")),
+            database=os.getenv("SUPABASE_DB_NAME", "postgres"),
+            query={"sslmode": "require"},
+        )
+
+    return normalize_database_url(
+        os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'bookmarks.db'}")
+    )
+
+
+DATABASE_URL = get_database_url()
 engine_options: dict = {"pool_pre_ping": True}
-if DATABASE_URL.startswith("sqlite:"):
+if isinstance(DATABASE_URL, str) and DATABASE_URL.startswith("sqlite:"):
     engine_options["connect_args"] = {"check_same_thread": False}
 
 engine = create_engine(DATABASE_URL, **engine_options)
