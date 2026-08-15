@@ -13,6 +13,7 @@ from app.models import Bookmark, Tag
 
 BASE_URL = "http://127.0.0.1:8765"
 SCREENSHOT = Path("/tmp/url-bookmark-ai-tags.png")
+DETAIL_SCREENSHOT = Path("/tmp/url-bookmark-markdown-detail.png")
 test_title = f"AI tag browser test {uuid4().hex}"
 
 
@@ -75,6 +76,11 @@ try:
         saved_card = page.locator(".bookmark-card").filter(has_text=test_title)
         assert saved_card.get_by_text("FastAPI", exact=True).is_visible()
         assert saved_card.get_by_text("技术", exact=True).is_visible()
+        saved_card.locator(".excerpt").click()
+        page.wait_for_load_state("networkidle")
+        assert page.locator(".markdown-body h1").get_by_text("FastAPI", exact=True).is_visible()
+        assert page.locator(".markdown-panel pre").count() == 0
+        page.screenshot(path=str(DETAIL_SCREENSHOT), full_page=True)
         assert not browser_errors, browser_errors
         browser.close()
 finally:
@@ -89,4 +95,7 @@ finally:
         session.commit()
 
 
-print(f"AI tag browser smoke test passed; screenshot: {SCREENSHOT}")
+print(
+    "AI tag browser smoke test passed; screenshots: "
+    f"{SCREENSHOT}, {DETAIL_SCREENSHOT}"
+)

@@ -64,6 +64,7 @@ def test_startup_migrates_existing_bookmark_table(tmp_path, monkeypatch):
     columns = {item["name"] for item in inspect(old_engine).get_columns("bookmark")}
     assert "deleted_at" in columns
     assert "is_draft" in columns
+    assert "notes" in columns
 
 
 def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
@@ -116,7 +117,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
 
             saved_tags = client.post(
                 f"/bookmarks/{bookmark_id}/tags",
-                data={"tag_choices": ["AI"]},
+                data={"tag_choices": ["AI"], "notes": "第一次阅读时的备注"},
                 follow_redirects=False,
             )
             assert saved_tags.status_code == 303
@@ -124,6 +125,7 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
 
             with Session(engine) as session:
                 assert session.get(Bookmark, bookmark_id).is_draft is False
+                assert session.get(Bookmark, bookmark_id).notes == "第一次阅读时的备注"
             search = client.get("/?q=Searchable&tag=AI")
             assert "Test article" in search.text
 
@@ -187,6 +189,24 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             detail = client.get(f"/bookmarks/{bookmark_id}")
             assert "Edited title" in detail.text
             assert "工作" in detail.text
+            assert '<h1>Body</h1>' in detail.text
+            assert "第一次阅读时的备注" not in detail.text
+
+            saved_note = client.post(
+                f"/bookmarks/{bookmark_id}/note",
+                data={"notes": "之后再整理", "action": "save"},
+                follow_redirects=False,
+            )
+            assert saved_note.status_code == 303
+            assert "之后再整理" in client.get(f"/bookmarks/{bookmark_id}").text
+            deleted_note = client.post(
+                f"/bookmarks/{bookmark_id}/note",
+                data={"action": "delete"},
+                follow_redirects=False,
+            )
+            assert deleted_note.status_code == 303
+            with Session(engine) as session:
+                assert session.get(Bookmark, bookmark_id).notes == ""
 
             deleted = client.post(
                 f"/bookmarks/{bookmark_id}/delete", follow_redirects=False
@@ -258,12 +278,42 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
                     "url": "https://example.com/from-extension",
                     "title": "Browser tab title",
                     "tags": ["Inbox", "Extension"],
+                    "notes": "插件备注",
                 },
             )
             assert api_response.status_code == 201
             assert api_response.json()["title"] == "Test article"
             assert api_response.json()["tags"] == ["Inbox", "Extension"]
             assert api_response.json()["duplicate"] is False
+            assert api_response.json()["notes"] == "插件备注"
+
+            preview_api = client.post(
+                "/api/bookmarks/preview",
+                json={
+                    "url": "https://example.com/two-step-extension",
+                    "title": "Browser preview title",
+                    "tags": [],
+                    "notes": "",
+                },
+            )
+            assert preview_api.status_code == 201
+            preview_id = preview_api.json()["id"]
+            confirmed_api = client.post(
+                f"/api/bookmarks/{preview_id}/confirm",
+                json={"tags": ["Inbox"], "notes": "确认时填写"},
+            )
+            assert confirmed_api.status_code == 200
+            assert confirmed_api.json()["notes"] == "确认时填写"
+            assert confirmed_api.json()["tags"] == ["Inbox"]
+            recent_api = client.get("/api/bookmarks/recent?limit=3")
+            assert recent_api.status_code == 200
+            assert any(item["id"] == preview_id for item in recent_api.json())
+            deleted_api = client.post(f"/api/bookmarks/{preview_id}/delete")
+            assert deleted_api.status_code == 200
+            assert all(
+                item["id"] != preview_id
+                for item in client.get("/api/bookmarks/recent?limit=10").json()
+            )
 
             duplicate_api = client.post(
                 "/api/bookmarks",

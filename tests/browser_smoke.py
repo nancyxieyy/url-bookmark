@@ -50,6 +50,7 @@ with sync_playwright() as playwright:
     page.screenshot(path=str(TAG_MENU_SCREENSHOT), full_page=True)
     page.get_by_role("button", name="完成").click()
     assert page.locator("[data-tag-menu]").is_hidden()
+    page.get_by_label("备注 可选").fill("浏览器验收备注")
     page.get_by_role("button", name="收藏").click()
     page.wait_for_load_state("networkidle")
     assert "收藏成功" in page.locator(".notice.success").inner_text()
@@ -58,6 +59,13 @@ with sync_playwright() as playwright:
     )
     assert test_card.count() == 1
     assert test_card.get_by_role("link", name="Browser Test", exact=True).is_visible()
+
+    # The default grid can be changed to a compact list without reloading.
+    assert not page.locator("[data-library]").evaluate("node => node.classList.contains('list-view')")
+    page.get_by_role("button", name="列表").click()
+    assert page.locator("[data-library]").evaluate("node => node.classList.contains('list-view')")
+    page.get_by_role("button", name="卡片").click()
+    assert not page.locator("[data-library]").evaluate("node => node.classList.contains('list-view')")
 
     # Re-entering the same URL does not fetch or create another bookmark.
     page.locator("#url").fill(f"{TEST_URL}#already-saved")
@@ -87,12 +95,26 @@ with sync_playwright() as playwright:
     )
     assert test_card.count() == 1
 
-    test_card.get_by_role("link", name="查看详情 →").click()
+    # Clicking a non-interactive part of the card opens its detail page.
+    test_card.locator(".excerpt").click()
     page.wait_for_load_state("networkidle")
     assert page.get_by_role("button", name="重新抓取").is_visible()
     edit_link = page.get_by_role("link", name="编辑")
     assert edit_link.is_visible()
     assert edit_link.evaluate("node => getComputedStyle(node).alignItems") == "center"
+    action_tops = page.locator(".detail-actions > *").evaluate_all(
+        "nodes => nodes.map(node => Math.round(node.getBoundingClientRect().top))"
+    )
+    assert len(set(action_tops)) == 1
+    assert page.locator('#notes textarea').input_value() == "浏览器验收备注"
+
+    page.locator('#notes textarea').fill("更新后的备注")
+    page.locator("#notes").get_by_role("button", name="保存修改").click()
+    page.wait_for_load_state("networkidle")
+    assert page.locator('#notes textarea').input_value() == "更新后的备注"
+    page.locator("#notes").get_by_role("button", name="删除备注").click()
+    page.wait_for_load_state("networkidle")
+    assert page.locator('#notes textarea').input_value() == ""
 
     page.get_by_role("link", name="编辑").click()
     page.locator("#title").fill("Browser acceptance bookmark")

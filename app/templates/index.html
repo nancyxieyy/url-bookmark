@@ -21,6 +21,8 @@
       {% set tag_recommender_auto = false %}
     {% endif %}
     {% include "_tag_selector.html" %}
+    <label for="capture-notes">备注 <small>可选</small></label>
+    <textarea id="capture-notes" name="notes" maxlength="5000" placeholder="写下为什么收藏、之后要做什么…">{{ capture_bookmark.notes }}</textarea>
     <p class="capture-status status {{ capture_bookmark.status }}">
       {% if capture_is_duplicate %}● 该网址已收藏过，可以修改标签
       {% elif capture_bookmark.status == 'success' %}● 正文已抓取，可以确认标签并收藏
@@ -49,21 +51,27 @@
 <section class="library" id="library" data-library>
   <div class="section-heading">
     <div><p class="eyebrow">YOUR LIBRARY</p><h2>我的收藏</h2></div>
-    <form class="search-form" method="get" action="/" data-live-search>
-      <input name="q" value="{{ q }}" placeholder="输入即筛选标题、网址或正文" aria-label="搜索收藏" data-library-search autocomplete="off">
-      <select name="tag" aria-label="按标签筛选" data-library-tag>
-        <option value="">全部标签</option>
-        {% for item in tags %}<option value="{{ item.name }}" {% if active_tag == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
-      </select>
-      <span class="search-status" data-search-status aria-live="polite"></span>
-    </form>
+    <div class="library-tools">
+      <div class="view-toggle" aria-label="收藏排版">
+        <button type="button" data-view-mode="grid" aria-pressed="true">卡片</button>
+        <button type="button" data-view-mode="list" aria-pressed="false">列表</button>
+      </div>
+      <form class="search-form" method="get" action="/" data-live-search>
+        <input name="q" value="{{ q }}" placeholder="输入即筛选标题、网址或正文" aria-label="搜索收藏" data-library-search autocomplete="off">
+        <select name="tag" aria-label="按标签筛选" data-library-tag>
+          <option value="">全部标签</option>
+          {% for item in tags %}<option value="{{ item.name }}" {% if active_tag == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        <span class="search-status" data-search-status aria-live="polite"></span>
+      </form>
+    </div>
   </div>
 
   <div class="library-results" data-library-results>
   {% if bookmarks %}
     <div class="bookmark-grid">
       {% for bookmark in bookmarks %}
-      <article class="bookmark-card">
+      <article class="bookmark-card" data-card-link="/bookmarks/{{ bookmark.id }}" tabindex="0" role="link" aria-label="查看 {{ bookmark.title }}">
         <div class="card-top">
           <span class="status {{ bookmark.status }}">
             {% if bookmark.status == 'success' %}● 已抓取{% elif bookmark.status == 'fetch_failed' %}△ 访问失败{% else %}△ 提取失败{% endif %}

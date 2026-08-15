@@ -77,6 +77,14 @@ def create_db_and_tables() -> None:
                     "ON bookmark (is_draft)"
                 )
             )
+    if "notes" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE bookmark ADD COLUMN notes "
+                    "TEXT NOT NULL DEFAULT ''"
+                )
+            )
 
 
 def get_session():

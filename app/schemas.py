@@ -15,6 +15,12 @@ class BookmarkCreateRequest(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
     title: str = Field(default="", max_length=500)
     tags: list[str] = Field(default_factory=list, max_length=20)
+    notes: str = Field(default="", max_length=5000)
+
+
+class BookmarkConfirmRequest(BaseModel):
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    notes: str = Field(default="", max_length=5000)
 
 
 class BookmarkResponse(BaseModel):
@@ -24,6 +30,7 @@ class BookmarkResponse(BaseModel):
     tags: list[str]
     status: str
     error_message: str | None
+    notes: str = ""
     duplicate: bool = False
 
 

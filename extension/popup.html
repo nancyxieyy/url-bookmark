@@ -13,7 +13,7 @@
         <p class="eyebrow">CAPTURE</p>
         <h1>URL Bookmark</h1>
       </div>
-      <a href="http://127.0.0.1:8000" target="_blank" title="打开管理页面">管理 ↗</a>
+      <a href="https://url-bookmark.onrender.com" target="_blank" title="打开管理页面">管理 ↗</a>
     </header>
 
     <section class="page-card">
@@ -24,7 +24,16 @@
       </div>
     </section>
 
-    <form id="bookmark-form">
+    <button id="preview-button" class="primary-button" type="button">
+      <span>抓取当前页面</span><span>→</span>
+    </button>
+
+    <form id="bookmark-form" hidden>
+      <fieldset id="recommended-fieldset" hidden>
+        <legend>AI 推荐 <span>点击选择</span></legend>
+        <div id="recommended-tags" class="tag-list"></div>
+      </fieldset>
+
       <fieldset>
         <legend>已有标签</legend>
         <div id="existing-tags" class="tag-list">
@@ -35,13 +44,21 @@
       <label for="new-tags">新标签 <span>使用逗号分隔</span></label>
       <input id="new-tags" name="new-tags" placeholder="AI, 稍后读" autocomplete="off">
 
+      <label for="notes">备注 <span>可选</span></label>
+      <textarea id="notes" name="notes" maxlength="5000" placeholder="写下为什么收藏、之后要做什么…"></textarea>
+
       <button id="save-button" type="submit">
-        <span>保存当前网页</span><span>→</span>
+        <span>收藏</span><span>→</span>
       </button>
       <p class="shortcut">⌘/Ctrl + Shift + S 可直接保存到 Inbox</p>
     </form>
 
     <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <section class="recent-section">
+      <div class="recent-heading"><h3>最近收藏</h3><span>最近 3 条</span></div>
+      <div id="recent-list" class="recent-list"><span class="muted">正在加载…</span></div>
+    </section>
   </main>
   <script src="popup.js"></script>
 </body>

@@ -1,4 +1,4 @@
-const API_URL = "http://127.0.0.1:8000/api/bookmarks";
+const API_URL = "https://url-bookmark.onrender.com/api/bookmarks";
 
 async function notify(title, message) {
   await chrome.notifications.create({

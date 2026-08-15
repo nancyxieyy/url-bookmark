@@ -18,6 +18,8 @@
       {% set tag_recommender_auto = false %}
     {% endif %}
     {% include "_tag_selector.html" %}
+    <label for="notes">备注 <small>可选</small></label>
+    <textarea id="notes" name="notes" maxlength="5000" placeholder="写下为什么收藏、之后要做什么…">{{ bookmark.notes }}</textarea>
     <p class="form-hint">修改网址不会自动覆盖已有正文；需要时请在详情页点击“重新抓取”。</p>
     <button type="submit">保存修改</button>
   </form>

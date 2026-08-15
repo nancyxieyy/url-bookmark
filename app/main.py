@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markdown_it import MarkdownIt
+from markupsafe import Markup
 from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -23,7 +25,12 @@ load_dotenv()
 
 from app.database import create_db_and_tables, get_session
 from app.models import Bookmark, Tag
-from app.schemas import BookmarkCreateRequest, BookmarkResponse, TagSuggestionsResponse
+from app.schemas import (
+    BookmarkConfirmRequest,
+    BookmarkCreateRequest,
+    BookmarkResponse,
+    TagSuggestionsResponse,
+)
 from app.services.extractor import InvalidURLError, extract_page, validate_url
 from app.services.tag_recommender import TagRecommendationError, recommend_tags
 
@@ -49,6 +56,7 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+markdown_renderer = MarkdownIt("commonmark", {"html": False})
 
 
 @app.middleware("http")
@@ -162,6 +170,10 @@ def host_for(url: str) -> str:
     return urlparse(url).hostname or url
 
 
+def render_markdown(value: str) -> Markup:
+    return Markup(markdown_renderer.render(value or ""))
+
+
 def url_identity(url: str) -> str:
     """Return a stable comparison key without changing the URL we display."""
     parsed = urlsplit(url.strip())
@@ -192,6 +204,7 @@ def find_active_bookmark_by_url(session: Session, url: str) -> Bookmark | None:
 
 templates.env.globals["host_for"] = host_for
 templates.env.globals["trash_days_remaining"] = trash_days_remaining
+templates.env.globals["render_markdown"] = render_markdown
 
 
 @app.get("/health")
@@ -205,6 +218,7 @@ def create_bookmark_record(
     raw_tags: str,
     title_hint: str = "",
     is_draft: bool = False,
+    notes: str = "",
 ) -> Bookmark:
     normalized_url = validate_url(url)
     result = extract_page(normalized_url)
@@ -216,6 +230,7 @@ def create_bookmark_record(
         status=result.status,
         error_message=result.error_message,
         is_draft=is_draft,
+        notes=notes.strip()[:5000],
     )
     assign_tags(session, bookmark, raw_tags)
     session.add(bookmark)
@@ -435,6 +450,7 @@ def update_bookmark_tags(
     tags: str = Form(""),
     tag_choices: list[str] = Form([]),
     duplicate: bool = False,
+    notes: str = Form(""),
     session: Session = Depends(get_session),
 ):
     bookmark = session.get(Bookmark, bookmark_id)
@@ -442,6 +458,7 @@ def update_bookmark_tags(
         return RedirectResponse("/?error=收藏不存在", status_code=303)
     assign_tags(session, bookmark, merge_tag_fields(tags, tag_choices))
     bookmark.is_draft = False
+    bookmark.notes = notes.strip()[:5000]
     bookmark.updated_at = datetime.now(timezone.utc)
     session.add(bookmark)
     session.commit()
@@ -465,6 +482,101 @@ def discard_bookmark_draft(
     return RedirectResponse("/#capture", status_code=303)
 
 
+def serialize_bookmark(bookmark: Bookmark, *, duplicate: bool = False) -> BookmarkResponse:
+    return BookmarkResponse(
+        id=bookmark.id,
+        url=bookmark.url,
+        title=bookmark.title,
+        tags=[tag.name for tag in bookmark.tags],
+        status=bookmark.status,
+        error_message=bookmark.error_message,
+        notes=bookmark.notes,
+        duplicate=duplicate,
+    )
+
+
+@app.post(
+    "/api/bookmarks/preview",
+    response_model=BookmarkResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def api_preview_bookmark(
+    payload: BookmarkCreateRequest,
+    response: Response,
+    session: Session = Depends(get_session),
+):
+    try:
+        normalized_url = validate_url(payload.url)
+    except InvalidURLError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    duplicate = find_active_bookmark_by_url(session, normalized_url)
+    if duplicate is not None:
+        response.status_code = status.HTTP_200_OK
+        return serialize_bookmark(duplicate, duplicate=True)
+    bookmark = create_bookmark_record(
+        session,
+        normalized_url,
+        "",
+        title_hint=payload.title,
+        is_draft=True,
+        notes=payload.notes,
+    )
+    return serialize_bookmark(bookmark)
+
+
+@app.post("/api/bookmarks/{bookmark_id}/confirm", response_model=BookmarkResponse)
+def api_confirm_bookmark(
+    bookmark_id: int,
+    payload: BookmarkConfirmRequest,
+    session: Session = Depends(get_session),
+):
+    bookmark = session.exec(
+        select(Bookmark)
+        .where(Bookmark.id == bookmark_id, Bookmark.deleted_at.is_(None))
+        .options(selectinload(Bookmark.tags))
+    ).first()
+    if bookmark is None:
+        raise HTTPException(status_code=404, detail="收藏不存在。")
+    assign_tags(session, bookmark, ",".join(payload.tags))
+    bookmark.notes = payload.notes.strip()[:5000]
+    bookmark.is_draft = False
+    bookmark.updated_at = datetime.now(timezone.utc)
+    session.add(bookmark)
+    session.commit()
+    session.refresh(bookmark)
+    remove_orphan_tags(session)
+    session.commit()
+    return serialize_bookmark(bookmark)
+
+
+@app.get("/api/bookmarks/recent", response_model=list[BookmarkResponse])
+def api_recent_bookmarks(
+    limit: int = 3,
+    session: Session = Depends(get_session),
+):
+    safe_limit = max(1, min(limit, 10))
+    bookmarks = session.exec(
+        select(Bookmark)
+        .where(Bookmark.deleted_at.is_(None), Bookmark.is_draft.is_(False))
+        .options(selectinload(Bookmark.tags))
+        .order_by(Bookmark.created_at.desc())
+        .limit(safe_limit)
+    ).all()
+    return [serialize_bookmark(bookmark) for bookmark in bookmarks]
+
+
+@app.post("/api/bookmarks/{bookmark_id}/delete")
+def api_delete_bookmark(bookmark_id: int, session: Session = Depends(get_session)):
+    bookmark = session.get(Bookmark, bookmark_id)
+    if bookmark is None or bookmark.deleted_at is not None or bookmark.is_draft:
+        raise HTTPException(status_code=404, detail="收藏不存在。")
+    bookmark.deleted_at = datetime.now(timezone.utc)
+    bookmark.updated_at = bookmark.deleted_at
+    session.add(bookmark)
+    session.commit()
+    return {"ok": True}
+
+
 @app.post(
     "/api/bookmarks",
     response_model=BookmarkResponse,
@@ -486,6 +598,8 @@ def api_create_bookmark(
                 ",".join([*existing_tags, *payload.tags]),
             )
             duplicate.updated_at = datetime.now(timezone.utc)
+            if payload.notes.strip():
+                duplicate.notes = payload.notes.strip()[:5000]
             session.add(duplicate)
             session.commit()
             session.refresh(duplicate)
@@ -497,6 +611,7 @@ def api_create_bookmark(
                 tags=[tag.name for tag in duplicate.tags],
                 status=duplicate.status,
                 error_message=duplicate.error_message,
+                notes=duplicate.notes,
                 duplicate=True,
             )
         bookmark = create_bookmark_record(
@@ -504,6 +619,7 @@ def api_create_bookmark(
             normalized_url,
             ",".join(payload.tags),
             title_hint=payload.title,
+            notes=payload.notes,
         )
     except InvalidURLError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -514,6 +630,7 @@ def api_create_bookmark(
         tags=[tag.name for tag in bookmark.tags],
         status=bookmark.status,
         error_message=bookmark.error_message,
+        notes=bookmark.notes,
         duplicate=False,
     )
 
@@ -577,6 +694,7 @@ def update_bookmark(
     url: str = Form(...),
     tags: str = Form(""),
     tag_choices: list[str] = Form([]),
+    notes: str = Form(""),
     session: Session = Depends(get_session),
 ):
     bookmark = session.get(Bookmark, bookmark_id)
@@ -596,12 +714,34 @@ def update_bookmark(
     bookmark.title = clean_title[:500]
     bookmark.url = normalized_url
     bookmark.updated_at = datetime.now(timezone.utc)
+    bookmark.notes = notes.strip()[:5000]
     assign_tags(session, bookmark, merge_tag_fields(tags, tag_choices))
     session.add(bookmark)
     session.commit()
     remove_orphan_tags(session)
     session.commit()
     return RedirectResponse(f"/bookmarks/{bookmark_id}?message=修改已保存", status_code=303)
+
+
+@app.post("/bookmarks/{bookmark_id}/note")
+def update_bookmark_note(
+    bookmark_id: int,
+    notes: str = Form(""),
+    action: str = Form("save"),
+    session: Session = Depends(get_session),
+):
+    bookmark = session.get(Bookmark, bookmark_id)
+    if bookmark is None or bookmark.deleted_at is not None or bookmark.is_draft:
+        return RedirectResponse("/?error=收藏不存在", status_code=303)
+    bookmark.notes = "" if action == "delete" else notes.strip()[:5000]
+    bookmark.updated_at = datetime.now(timezone.utc)
+    session.add(bookmark)
+    session.commit()
+    message = "备注已删除" if action == "delete" else "备注已保存"
+    return RedirectResponse(
+        f"/bookmarks/{bookmark_id}?message={quote_plus(message)}#notes",
+        status_code=303,
+    )
 
 
 @app.post("/bookmarks/{bookmark_id}/refetch")

@@ -263,3 +263,36 @@ document.querySelectorAll("[data-live-search]").forEach((form) => {
     refresh();
   });
 });
+
+document.querySelectorAll("[data-library]").forEach((library) => {
+  const buttons = [...library.querySelectorAll("[data-view-mode]")];
+  const applyMode = (mode) => {
+    const selected = mode === "list" ? "list" : "grid";
+    library.classList.toggle("list-view", selected === "list");
+    buttons.forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.viewMode === selected));
+    });
+    try { window.localStorage.setItem("bookmark-view", selected); } catch (_) {}
+  };
+
+  let initialMode = "grid";
+  try { initialMode = window.localStorage.getItem("bookmark-view") || "grid"; } catch (_) {}
+  applyMode(initialMode);
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => applyMode(button.dataset.viewMode));
+  });
+});
+
+document.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-card-link]");
+  if (!card || event.target.closest("a, button, input, select, textarea, form, dialog")) return;
+  window.location.href = card.dataset.cardLink;
+});
+
+document.addEventListener("keydown", (event) => {
+  const card = event.target.closest("[data-card-link]");
+  if (card && event.target === card && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    window.location.href = card.dataset.cardLink;
+  }
+});

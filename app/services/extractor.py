@@ -15,6 +15,7 @@ USER_AGENT = "URLBookmark/1.0 (+local bookmark reader)"
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 MAX_REDIRECTS = 5
 PROXY_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
+YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 
 
 class InvalidURLError(ValueError):
@@ -128,8 +129,55 @@ def _fallback_title(url: str) -> str:
     return urlparse(url).hostname or url
 
 
+def _is_youtube_video(url: str) -> bool:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in YOUTUBE_HOSTS:
+        return False
+    if hostname == "youtu.be":
+        return bool(parsed.path.strip("/"))
+    return parsed.path == "/watch" or parsed.path.startswith(("/shorts/", "/embed/"))
+
+
+def _escape_markdown_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _youtube_metadata(url: str) -> ExtractionResult | None:
+    """Use YouTube's public oEmbed metadata when the watch page blocks servers."""
+    if not _is_youtube_video(url):
+        return None
+    try:
+        response = httpx.get(
+            "https://www.youtube.com/oembed",
+            params={"url": url, "format": "json"},
+            headers={"User-Agent": USER_AGENT},
+            timeout=8.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+    title = str(payload.get("title") or "YouTube video").strip()[:500]
+    author = str(payload.get("author_name") or "").strip()
+    author_url = str(payload.get("author_url") or "").strip()
+    lines = ["## 视频信息", ""]
+    if author:
+        author_text = _escape_markdown_text(author)
+        lines.append(
+            f"- 频道：[{author_text}]({author_url})" if author_url else f"- 频道：{author_text}"
+        )
+    lines.append(f"- 来源：[在 YouTube 观看]({url})")
+    lines.extend(["", "> YouTube 页面限制了服务器直接读取，因此这里保存视频元数据和原始链接。"])
+    return ExtractionResult(title=title, markdown_content="\n".join(lines))
+
+
 def extract_page(url: str) -> ExtractionResult:
     normalized_url = validate_url(url)
+    youtube_result = _youtube_metadata(normalized_url)
+    if youtube_result is not None:
+        return youtube_result
     try:
         html, final_url = _download_html(normalized_url)
     except FetchError as exc:
@@ -151,6 +199,26 @@ def extract_page(url: str) -> ExtractionResult:
         favor_precision=True,
     )
     if not markdown or not markdown.strip():
+        markdown = trafilatura.extract(
+            html,
+            url=final_url,
+            output_format="markdown",
+            include_links=True,
+            include_images=False,
+            include_tables=True,
+            favor_recall=True,
+        )
+    if not markdown or not markdown.strip():
+        description = (
+            unescape(metadata.description).strip()
+            if metadata and metadata.description
+            else ""
+        )
+        if description:
+            return ExtractionResult(
+                title=title or _fallback_title(final_url),
+                markdown_content=f"## 页面简介\n\n{description}",
+            )
         return ExtractionResult(
             title=title or _fallback_title(final_url),
             markdown_content="",

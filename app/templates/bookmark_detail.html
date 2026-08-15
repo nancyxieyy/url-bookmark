@@ -23,9 +23,19 @@
     <div class="tag-list">{% for item in bookmark.tags %}<span class="tag">{{ item.name }}</span>{% endfor %}</div>
   </div>
   {% if bookmark.error_message %}<div class="notice error">{{ bookmark.error_message }}</div>{% endif %}
+  <section class="notes-panel" id="notes">
+    <div class="panel-label">MY NOTE</div>
+    <form method="post" action="/bookmarks/{{ bookmark.id }}/note">
+      <textarea name="notes" maxlength="5000" placeholder="为这条收藏写一点备注…">{{ bookmark.notes }}</textarea>
+      <div class="note-actions">
+        {% if bookmark.notes %}<button class="danger" type="submit" name="action" value="delete">删除备注</button>{% endif %}
+        <button type="submit" name="action" value="save">{% if bookmark.notes %}保存修改{% else %}添加备注{% endif %}</button>
+      </div>
+    </form>
+  </section>
   <section class="markdown-panel">
-    <div class="panel-label">MARKDOWN CONTENT</div>
-    {% if bookmark.markdown_content %}<pre>{{ bookmark.markdown_content }}</pre>{% else %}<div class="empty-copy">暂无正文。你可以稍后重新抓取，收藏的网址会一直保留。</div>{% endif %}
+    <div class="panel-label">RENDERED MARKDOWN</div>
+    {% if bookmark.markdown_content %}<div class="markdown-body">{{ render_markdown(bookmark.markdown_content) }}</div>{% else %}<div class="empty-copy">暂无正文。你可以稍后重新抓取，收藏的网址会一直保留。</div>{% endif %}
   </section>
 </article>
 {% endblock %}
