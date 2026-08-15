@@ -64,13 +64,29 @@
       </div>
       <form class="search-form" method="get" action="/" data-live-search>
         <input name="q" value="{{ q }}" placeholder="输入即筛选标题、网址或正文" aria-label="搜索收藏" data-library-search autocomplete="off">
+        <input type="hidden" name="platform" value="{{ active_platform }}" data-library-platform>
         <select name="tag" aria-label="按标签筛选" data-library-tag>
           <option value="">全部标签</option>
-          {% for item in tags %}<option value="{{ item.name }}" {% if active_tag == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+          {% for item in filter_tags %}<option value="{{ item }}" {% if active_tag == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
         </select>
         <span class="search-status" data-search-status aria-live="polite"></span>
       </form>
     </div>
+  </div>
+
+  <div class="library-filterbar">
+    <div class="platform-filter" aria-label="按来源平台筛选" data-platform-filter>
+      <button type="button" data-platform-value="" aria-pressed="{% if not active_platform %}true{% else %}false{% endif %}">全部</button>
+      {% for item in platform_choices %}
+      <button type="button" data-platform-value="{{ item }}" aria-pressed="{% if active_platform == item %}true{% else %}false{% endif %}">{{ item }}</button>
+      {% endfor %}
+    </div>
+    <label class="sort-control" for="library-sort">
+      <span>排列</span>
+      <select id="library-sort" aria-label="收藏排序" data-library-sort>
+        {% for value, label in sort_choices.items() %}<option value="{{ value }}" {% if active_sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
   </div>
 
   <div class="library-results" data-library-results>

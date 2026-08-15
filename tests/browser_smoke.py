@@ -71,6 +71,13 @@ with sync_playwright() as playwright:
     assert page.locator("[data-library]").evaluate("node => node.classList.contains('list-view')")
     page.get_by_role("button", name="卡片").click()
     assert not page.locator("[data-library]").evaluate("node => node.classList.contains('list-view')")
+    sort_control = page.get_by_role("combobox", name="收藏排序")
+    sort_control.select_option("platform_asc")
+    page.wait_for_timeout(300)
+    assert "sort=platform_asc" in page.url
+    sort_control.select_option("updated_desc")
+    page.wait_for_timeout(300)
+    assert "sort=updated_desc" in page.url
 
     # Re-entering the same URL does not fetch or create another bookmark.
     page.locator("#url").fill(f"{TEST_URL}#already-saved")
@@ -139,6 +146,12 @@ with sync_playwright() as playwright:
 
     page.get_by_role("link", name="返回收藏").click()
     page.wait_for_load_state("networkidle")
+    page.locator("[data-platform-value='其他']").click()
+    page.wait_for_timeout(300)
+    assert "platform=" in page.url
+    assert page.get_by_role("combobox", name="按标签筛选").locator(
+        "option", has_text="工作"
+    ).count() == 1
     page.get_by_role("combobox", name="按标签筛选").select_option(label="工作")
     page.wait_for_timeout(250)
     test_card = page.locator(".bookmark-card").filter(

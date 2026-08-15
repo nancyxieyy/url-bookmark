@@ -199,11 +199,15 @@ document.addEventListener("click", (event) => {
 });
 
 document.querySelectorAll("[data-live-search]").forEach((form) => {
+  const library = form.closest("[data-library]");
   const search = form.querySelector("[data-library-search]");
   const tag = form.querySelector("[data-library-tag]");
+  const platform = form.querySelector("[data-library-platform]");
+  const platformFilter = library?.querySelector("[data-platform-filter]");
+  const sort = library?.querySelector("[data-library-sort]");
   const status = form.querySelector("[data-search-status]");
   const results = document.querySelector("[data-library-results]");
-  if (!search || !tag || !results) return;
+  if (!search || !tag || !platform || !sort || !results) return;
 
   let timer;
   let controller;
@@ -218,7 +222,12 @@ document.querySelectorAll("[data-live-search]").forEach((form) => {
     else url.searchParams.delete("q");
     if (tag.value) url.searchParams.set("tag", tag.value);
     else url.searchParams.delete("tag");
+    if (platform.value) url.searchParams.set("platform", platform.value);
+    else url.searchParams.delete("platform");
+    if (sort.value && sort.value !== "created_desc") url.searchParams.set("sort", sort.value);
+    else url.searchParams.delete("sort");
     url.searchParams.delete("message");
+    url.searchParams.delete("error");
     url.hash = "library";
 
     results.classList.add("loading");
@@ -234,6 +243,8 @@ document.querySelectorAll("[data-live-search]").forEach((form) => {
       const nextResults = nextPage.querySelector("[data-library-results]");
       if (!nextResults) throw new Error("筛选结果不可用");
       results.replaceChildren(...nextResults.childNodes);
+      const nextTag = nextPage.querySelector("[data-library-tag]");
+      if (nextTag) tag.replaceChildren(...nextTag.childNodes);
       window.history.replaceState({}, "", url);
       const count = results.querySelectorAll(".bookmark-card").length;
       status.textContent = count ? `已显示 ${count} 条` : "没有匹配结果";
@@ -251,6 +262,17 @@ document.querySelectorAll("[data-live-search]").forEach((form) => {
 
   search.addEventListener("input", schedule);
   tag.addEventListener("change", refresh);
+  sort.addEventListener("change", refresh);
+  platformFilter?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-platform-value]");
+    if (!button) return;
+    platform.value = button.dataset.platformValue;
+    tag.value = "";
+    platformFilter.querySelectorAll("[data-platform-value]").forEach((item) => {
+      item.setAttribute("aria-pressed", String(item === button));
+    });
+    refresh();
+  });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     refresh();

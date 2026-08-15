@@ -32,6 +32,7 @@ from app.schemas import (
     TagSuggestionsResponse,
 )
 from app.services.extractor import InvalidURLError, extract_page, validate_url
+from app.services.platforms import OTHER_PLATFORM, platform_for_url
 from app.services.tag_recommender import TagRecommendationError, recommend_tags
 
 
@@ -39,6 +40,13 @@ APP_DIR = Path(__file__).resolve().parent
 DEFAULT_TAG_CHOICES = ("Inbox", "稍后读", "AI", "技术", "学习", "工作")
 TRASH_RETENTION_DAYS = 30
 DRAFT_RETENTION_HOURS = 24
+SORT_CHOICES = {
+    "created_desc": "加入时间（新→旧）",
+    "created_asc": "加入时间（旧→新）",
+    "updated_desc": "最近修改",
+    "platform_asc": "平台 A→Z",
+    "platform_desc": "平台 Z→A",
+}
 
 
 @asynccontextmanager
@@ -242,6 +250,7 @@ def create_bookmark_record(
         error_message=result.error_message,
         is_draft=is_draft,
         notes=notes.strip()[:5000],
+        platform=platform_for_url(normalized_url),
     )
     assign_tags(session, bookmark, raw_tags)
     session.add(bookmark)
@@ -255,20 +264,32 @@ def index(
     request: Request,
     q: str = "",
     tag: str = "",
+    platform: str = "",
+    sort: str = "created_desc",
     suggest_for: int | None = None,
     duplicate_for: int | None = None,
     session: Session = Depends(get_session),
 ):
     purge_expired_bookmarks(session)
     purge_expired_drafts(session)
-    statement = (
+    platform_statement = (
         select(Bookmark)
         .where(Bookmark.deleted_at.is_(None), Bookmark.is_draft.is_(False))
         .options(selectinload(Bookmark.tags))
     )
+    if platform:
+        platform_statement = platform_statement.where(Bookmark.platform == platform)
+
+    platform_scope = session.exec(platform_statement).all()
+    filter_tags = sorted(
+        {item.name for bookmark in platform_scope for item in bookmark.tags},
+        key=str.casefold,
+    )
+
+    bookmarks_statement = platform_statement
     if q.strip():
         pattern = f"%{q.strip()}%"
-        statement = statement.where(
+        bookmarks_statement = bookmarks_statement.where(
             or_(
                 Bookmark.title.ilike(pattern),
                 Bookmark.url.ilike(pattern),
@@ -276,17 +297,26 @@ def index(
             )
         )
     if tag:
-        statement = statement.where(Bookmark.tags.any(Tag.name == tag))
-    bookmarks = session.exec(statement.order_by(Bookmark.created_at.desc())).all()
-    tags = session.exec(
-        select(Tag)
-        .where(
-            Tag.bookmarks.any(
-                Bookmark.deleted_at.is_(None) & Bookmark.is_draft.is_(False)
-            )
-        )
-        .order_by(Tag.name)
+        bookmarks_statement = bookmarks_statement.where(Bookmark.tags.any(Tag.name == tag))
+
+    safe_sort = sort if sort in SORT_CHOICES else "created_desc"
+    ordering = {
+        "created_desc": (Bookmark.created_at.desc(),),
+        "created_asc": (Bookmark.created_at.asc(),),
+        "updated_desc": (Bookmark.updated_at.desc(), Bookmark.created_at.desc()),
+        "platform_asc": (Bookmark.platform.asc(), Bookmark.title.asc()),
+        "platform_desc": (Bookmark.platform.desc(), Bookmark.title.asc()),
+    }[safe_sort]
+    bookmarks = session.exec(bookmarks_statement.order_by(*ordering)).all()
+    platform_names = session.exec(
+        select(Bookmark.platform)
+        .where(Bookmark.deleted_at.is_(None), Bookmark.is_draft.is_(False))
+        .distinct()
     ).all()
+    platform_choices = sorted(
+        set(platform_names),
+        key=lambda name: (name == OTHER_PLATFORM, name.casefold()),
+    )
     preview = None
     if suggest_for is not None:
         preview = session.exec(
@@ -315,7 +345,8 @@ def index(
         name="index.html",
         context={
             "bookmarks": bookmarks,
-            "tags": tags,
+            "filter_tags": filter_tags,
+            "platform_choices": platform_choices,
             "tag_choices": available_tag_choices(session),
             "selected_tags": set(),
             "capture_bookmark": capture_bookmark,
@@ -328,6 +359,9 @@ def index(
             ),
             "q": q,
             "active_tag": tag,
+            "active_platform": platform,
+            "active_sort": safe_sort,
+            "sort_choices": SORT_CHOICES,
         },
     )
 
@@ -724,6 +758,7 @@ def update_bookmark(
         )
     bookmark.title = clean_title[:500]
     bookmark.url = normalized_url
+    bookmark.platform = platform_for_url(normalized_url)
     bookmark.updated_at = datetime.now(timezone.utc)
     bookmark.notes = notes.strip()[:5000]
     assign_tags(session, bookmark, merge_tag_fields(tags, tag_choices))

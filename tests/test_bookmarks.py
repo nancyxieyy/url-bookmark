@@ -57,6 +57,12 @@ def test_startup_migrates_existing_bookmark_table(tmp_path, monkeypatch):
                 ")"
             )
         )
+        connection.execute(
+            text(
+                "INSERT INTO bookmark (id, url, title) VALUES "
+                "(1, 'https://www.zhihu.com/question/1', 'Old Zhihu item')"
+            )
+        )
 
     monkeypatch.setattr(database_module, "engine", old_engine)
     database_module.create_db_and_tables()
@@ -65,6 +71,11 @@ def test_startup_migrates_existing_bookmark_table(tmp_path, monkeypatch):
     assert "deleted_at" in columns
     assert "is_draft" in columns
     assert "notes" in columns
+    assert "platform" in columns
+    with old_engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT platform FROM bookmark WHERE id = 1")
+        ).scalar_one() == "知乎"
 
 
 def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
@@ -342,6 +353,51 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert cors_response.status_code == 200
             assert cors_response.headers["access-control-allow-origin"].startswith(
                 "chrome-extension://"
+            )
+
+            youtube_response = client.post(
+                "/api/bookmarks",
+                json={
+                    "url": "https://www.youtube.com/watch?v=platform-test",
+                    "title": "YouTube tab",
+                    "tags": ["Video"],
+                },
+            )
+            assert youtube_response.status_code == 201
+            youtube_id = youtube_response.json()["id"]
+            with Session(engine) as session:
+                youtube_item = session.get(Bookmark, youtube_id)
+                other_item = session.get(Bookmark, api_response.json()["id"])
+                assert youtube_item.platform == "YouTube"
+                assert other_item.platform == "其他"
+                youtube_item.title = "YouTube platform item"
+                youtube_item.updated_at = datetime.now(timezone.utc) - timedelta(days=1)
+                other_item.title = "Other platform item"
+                other_item.updated_at = datetime.now(timezone.utc)
+                session.add(youtube_item)
+                session.add(other_item)
+                session.commit()
+
+            youtube_page = client.get("/?platform=YouTube")
+            assert "YouTube platform item" in youtube_page.text
+            assert "Other platform item" not in youtube_page.text
+            assert 'value="Video"' in youtube_page.text
+            assert 'value="Extension"' not in youtube_page.text
+            other_page = client.get("/?platform=其他")
+            assert "Other platform item" in other_page.text
+            assert "YouTube platform item" not in other_page.text
+
+            platform_ascending = client.get("/?sort=platform_asc").text
+            assert platform_ascending.index("YouTube platform item") < platform_ascending.index(
+                "Other platform item"
+            )
+            platform_descending = client.get("/?sort=platform_desc").text
+            assert platform_descending.index("Other platform item") < platform_descending.index(
+                "YouTube platform item"
+            )
+            recently_updated = client.get("/?sort=updated_desc").text
+            assert recently_updated.index("Other platform item") < recently_updated.index(
+                "YouTube platform item"
             )
 
             monkeypatch.setattr(

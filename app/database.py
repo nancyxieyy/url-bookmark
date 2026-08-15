@@ -85,6 +85,28 @@ def create_db_and_tables() -> None:
                     "TEXT NOT NULL DEFAULT ''"
                 )
             )
+    if "platform" not in columns:
+        from app.services.platforms import platform_for_url
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE bookmark ADD COLUMN platform "
+                    "VARCHAR(50) NOT NULL DEFAULT '其他'"
+                )
+            )
+            rows = connection.execute(text("SELECT id, url FROM bookmark")).mappings()
+            for row in rows:
+                connection.execute(
+                    text("UPDATE bookmark SET platform = :platform WHERE id = :id"),
+                    {"platform": platform_for_url(row["url"]), "id": row["id"]},
+                )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_bookmark_platform "
+                    "ON bookmark (platform)"
+                )
+            )
 
 
 def get_session():

@@ -31,6 +31,7 @@ class Bookmark(SQLModel, table=True):
     status: str = Field(default="success", index=True, max_length=30)
     error_message: str | None = Field(default=None, max_length=1000)
     notes: str = Field(default="", max_length=5000)
+    platform: str = Field(default="其他", index=True, max_length=50)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     deleted_at: datetime | None = Field(default=None, index=True)
