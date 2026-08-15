@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,7 +10,7 @@ from urllib.parse import quote_plus, urlparse
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
@@ -38,6 +41,28 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+
+
+@app.middleware("http")
+async def optional_basic_auth(request: Request, call_next):
+    """Protect public deployments when APP_PASSWORD is configured."""
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    password = os.getenv("APP_PASSWORD", "")
+    if not password:
+        return await call_next(request)
+
+    username = os.getenv("APP_USERNAME", "admin")
+    expected = base64.b64encode(f"{username}:{password}".encode()).decode()
+    authorization = request.headers.get("Authorization", "")
+    if not secrets.compare_digest(authorization, f"Basic {expected}"):
+        return JSONResponse(
+            {"detail": "Authentication required"},
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="URL Bookmark"'},
+        )
+    return await call_next(request)
 
 
 def parse_tag_names(raw_tags: str) -> list[str]:
@@ -74,6 +99,11 @@ def host_for(url: str) -> str:
 
 
 templates.env.globals["host_for"] = host_for
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 def create_bookmark_record(

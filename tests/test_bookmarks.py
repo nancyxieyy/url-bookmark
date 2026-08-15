@@ -1,12 +1,21 @@
 from collections.abc import Generator
+import base64
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.database import get_session
+from app.database import normalize_database_url
 from app.main import app
 from app.models import Bookmark
 from app.schemas import ExtractionResult
+
+
+def test_normalize_database_url_for_supabase():
+    assert normalize_database_url("postgresql://user:pass@host/db") == (
+        "postgresql+psycopg://user:pass@host/db"
+    )
+    assert normalize_database_url("sqlite:///data/test.db") == "sqlite:///data/test.db"
 
 
 def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
@@ -113,5 +122,17 @@ def test_create_search_edit_and_delete_bookmark(tmp_path, monkeypatch):
             assert failed_capture.status_code == 201
             assert failed_capture.json()["status"] == "fetch_failed"
             assert failed_capture.json()["title"] == "Title captured by the extension"
+
+            monkeypatch.setenv("APP_USERNAME", "demo")
+            monkeypatch.setenv("APP_PASSWORD", "correct horse battery staple")
+            assert client.get("/").status_code == 401
+            assert client.get("/health").status_code == 200
+            credentials = base64.b64encode(
+                b"demo:correct horse battery staple"
+            ).decode()
+            authenticated = client.get(
+                "/", headers={"Authorization": f"Basic {credentials}"}
+            )
+            assert authenticated.status_code == 200
     finally:
         app.dependency_overrides.clear()

@@ -99,6 +99,29 @@ uvicorn app.main:app --reload
 
 数据库会在第一次启动时自动创建在 `data/bookmarks.db`。该文件已加入 `.gitignore`，因此不会把本地收藏提交到仓库。
 
+## 免费部署：Render + Supabase
+
+线上部署使用 Render Free Web Service 运行 FastAPI，使用 Supabase PostgreSQL 持久化数据。本地开发仍默认使用 SQLite，不需要配置 Supabase。
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/nancyxieyy/url-bookmark)
+
+部署时 Render 会根据 `render.yaml` 要求填写两个 Secret：
+
+- `DATABASE_URL`：Supabase Dashboard 的 **Connect → Session pooler** PostgreSQL 连接串。建议使用 Session pooler，保留连接串中的 `sslmode=require`，不要提交到 GitHub。
+- `APP_PASSWORD`：网页版访问密码，建议使用至少 16 位随机密码。
+
+`APP_USERNAME` 默认为 `admin`。部署完成后，浏览器访问 Render 提供的固定 `*.onrender.com` 地址时会显示 HTTP Basic Auth 登录框。
+
+部署配置会执行：
+
+```text
+Build: pip install -r requirements.txt
+Start: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+Health check: GET /health
+```
+
+应用会自动识别标准 `postgresql://` / `postgres://` 连接串并使用 psycopg 3。本地没有 `DATABASE_URL` 时继续使用 `data/bookmarks.db`。
+
 ## 安装浏览器扩展
 
 扩展依赖本地 FastAPI 服务，因此请先保持 `uvicorn app.main:app --reload` 运行在 `http://127.0.0.1:8000`。
