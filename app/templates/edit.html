@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}编辑 · URL Bookmark{% endblock %}
+{% block content %}
+<a class="back-link" href="/bookmarks/{{ bookmark.id }}">← 返回详情</a>
+<section class="edit-panel">
+  <p class="eyebrow">EDIT BOOKMARK</p><h1>编辑收藏</h1>
+  <form method="post" action="/bookmarks/{{ bookmark.id }}/edit">
+    <label for="title">标题</label>
+    <input id="title" name="title" value="{{ bookmark.title }}" maxlength="500" required>
+    <label for="url">网页地址</label>
+    <input id="url" name="url" type="url" value="{{ bookmark.url }}" required>
+    <label for="tags">标签 <small>使用逗号分隔</small></label>
+    <input id="tags" name="tags" value="{{ bookmark.tags | map(attribute='name') | join(', ') }}">
+    <p class="form-hint">修改网址不会自动覆盖已有正文；需要时请在详情页点击“重新抓取”。</p>
+    <button type="submit">保存修改</button>
+  </form>
+</section>
+{% endblock %}

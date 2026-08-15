@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "URL Bookmark Capture",
+  "version": "1.0.0",
+  "description": "把当前网页快速保存到本地 URL Bookmark。",
+  "permissions": ["activeTab", "notifications"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "action": {
+    "default_title": "收藏当前网页",
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "quick-save-inbox": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "快速保存当前网页到 Inbox"
+    }
+  }
+}

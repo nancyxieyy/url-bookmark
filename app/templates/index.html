@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">A SMALL, RELIABLE ARCHIVE</p>
+    <h1>收藏一个网址，<br>留下它真正重要的内容。</h1>
+    <p class="intro">自动提取标题和正文，保存为 Markdown。即使抓取失败，网址也不会丢。</p>
+  </div>
+  <form class="capture-form" method="post" action="/bookmarks">
+    <label for="url">网页地址</label>
+    <input id="url" name="url" type="url" placeholder="https://example.com/article" required>
+    <label for="tags">标签 <small>使用逗号分隔</small></label>
+    <input id="tags" name="tags" placeholder="AI, 技术, 稍后读">
+    <button type="submit">收藏并抓取 <span>→</span></button>
+  </form>
+</section>
+
+<section class="library">
+  <div class="section-heading">
+    <div><p class="eyebrow">YOUR LIBRARY</p><h2>我的收藏</h2></div>
+    <form class="search-form" method="get" action="/">
+      <input name="q" value="{{ q }}" placeholder="搜索标题、网址或正文">
+      <select name="tag" aria-label="按标签筛选">
+        <option value="">全部标签</option>
+        {% for item in tags %}<option value="{{ item.name }}" {% if active_tag == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+      </select>
+      <button type="submit">搜索</button>
+    </form>
+  </div>
+
+  {% if bookmarks %}
+    <div class="bookmark-grid">
+      {% for bookmark in bookmarks %}
+      <article class="bookmark-card">
+        <div class="card-top">
+          <span class="status {{ bookmark.status }}">
+            {% if bookmark.status == 'success' %}● 已抓取{% elif bookmark.status == 'fetch_failed' %}△ 访问失败{% else %}△ 提取失败{% endif %}
+          </span>
+          <span class="date">{{ bookmark.created_at.strftime('%Y.%m.%d') }}</span>
+        </div>
+        <h3><a href="/bookmarks/{{ bookmark.id }}">{{ bookmark.title }}</a></h3>
+        <a class="domain" href="{{ bookmark.url }}" target="_blank" rel="noopener noreferrer">{{ host_for(bookmark.url) }} ↗</a>
+        <p class="excerpt">{{ (bookmark.markdown_content or bookmark.error_message or '尚未提取正文。')[:180] }}{% if (bookmark.markdown_content or '')|length > 180 %}…{% endif %}</p>
+        <div class="card-footer">
+          <div class="tag-list">
+            {% for item in bookmark.tags %}<a class="tag" href="/?tag={{ item.name|urlencode }}">{{ item.name }}</a>{% endfor %}
+          </div>
+          <a class="detail-link" href="/bookmarks/{{ bookmark.id }}">查看详情 →</a>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <span>◇</span><h3>这里还没有匹配的收藏</h3><p>从上方粘贴一个公开网页地址开始。</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ bookmark.title }} · URL Bookmark{% endblock %}
+{% block content %}
+<a class="back-link" href="/">← 返回收藏</a>
+<article class="detail-page">
+  <header class="detail-header">
+    <div>
+      <span class="status {{ bookmark.status }}">
+        {% if bookmark.status == 'success' %}● 已抓取{% elif bookmark.status == 'fetch_failed' %}△ 访问失败{% else %}△ 提取失败{% endif %}
+      </span>
+      <h1>{{ bookmark.title }}</h1>
+      <a class="source-url" href="{{ bookmark.url }}" target="_blank" rel="noopener noreferrer">{{ bookmark.url }} ↗</a>
+    </div>
+    <div class="detail-actions">
+      <a class="button secondary" href="/bookmarks/{{ bookmark.id }}/edit">编辑</a>
+      <form method="post" action="/bookmarks/{{ bookmark.id }}/refetch"><button type="submit">重新抓取</button></form>
+      <form method="post" action="/bookmarks/{{ bookmark.id }}/delete" onsubmit="return confirm('确定删除这条收藏吗？')"><button class="danger" type="submit">删除</button></form>
+    </div>
+  </header>
+  <div class="metadata">
+    <span>收藏于 {{ bookmark.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    <span>更新于 {{ bookmark.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    <div class="tag-list">{% for item in bookmark.tags %}<span class="tag">{{ item.name }}</span>{% endfor %}</div>
+  </div>
+  {% if bookmark.error_message %}<div class="notice error">{{ bookmark.error_message }}</div>{% endif %}
+  <section class="markdown-panel">
+    <div class="panel-label">MARKDOWN CONTENT</div>
+    {% if bookmark.markdown_content %}<pre>{{ bookmark.markdown_content }}</pre>{% else %}<div class="empty-copy">暂无正文。你可以稍后重新抓取，收藏的网址会一直保留。</div>{% endif %}
+  </section>
+</article>
+{% endblock %}
